@@ -10,6 +10,7 @@ package org.dspace.identifier;
 
 import java.sql.SQLException;
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.List;
 import org.dspace.authorize.AuthorizeException;
 import org.dspace.content.Metadatum;
@@ -67,12 +68,12 @@ public class DOIIdentifierProvider
     public static final String DOI_QUALIFIER = "uri";
     
     public static final Integer TO_BE_REGISTERED = 1;
-    public static final Integer TO_BE_RESERVED = 2;
+    public static final Integer TO_BE_RESERVERED = 2;
     public static final Integer IS_REGISTERED = 3;
     public static final Integer IS_RESERVED = 4;
-    public static final Integer UPDATE_RESERVED = 5;
+    public static final Integer UPDATE_RESERVERED = 5;
     public static final Integer UPDATE_REGISTERED = 6;
-    public static final Integer UPDATE_BEFORE_REGISTRATION = 7;
+    public static final Integer UPDATE_BEFORE_REGISTERATION = 7;
     public static final Integer TO_BE_DELETED = 8;
     public static final Integer DELETED = 9;
     
@@ -250,7 +251,7 @@ public class DOIIdentifierProvider
             return;
         } 
                 
-        doiRow.setColumn("status", TO_BE_RESERVED);
+        doiRow.setColumn("status", TO_BE_RESERVERED);
         try
         {
             DatabaseManager.update(context, doiRow);
@@ -352,11 +353,11 @@ public class DOIIdentifierProvider
         }
         else if (TO_BE_REGISTERED == doiRow.getIntColumn("status")) 
         {
-            doiRow.setColumn("status", UPDATE_BEFORE_REGISTRATION);
+            doiRow.setColumn("status", UPDATE_BEFORE_REGISTERATION);
         }
         else if (IS_RESERVED == doiRow.getIntColumn("status")) 
         {
-            doiRow.setColumn("status", UPDATE_RESERVED);
+            doiRow.setColumn("status", UPDATE_RESERVERED);
         }
         else
         {
@@ -415,11 +416,11 @@ public class DOIIdentifierProvider
         {
             doiRow.setColumn("status", IS_REGISTERED);
         }
-        else if (UPDATE_BEFORE_REGISTRATION == doiRow.getIntColumn("status"))
+        else if (UPDATE_BEFORE_REGISTERATION == doiRow.getIntColumn("status")) 
         {
             doiRow.setColumn("status", TO_BE_REGISTERED);
         }
-        else if (UPDATE_RESERVED == doiRow.getIntColumn("status"))
+        else if (UPDATE_RESERVERED == doiRow.getIntColumn("status")) 
         {
             doiRow.setColumn("status", IS_RESERVED);
         }

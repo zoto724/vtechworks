@@ -723,11 +723,11 @@ public abstract class AbstractSearch extends AbstractDSpaceTransformer implement
         {
             return;
         }
+        
 
         String query = getQuery();
 
-        // Escape any special characters in this user-entered query
-        query = DiscoveryUIUtils.escapeQueryChars(query);
+        //DSpaceObject scope = getScope();
 
         int page = getParameterPage();
 

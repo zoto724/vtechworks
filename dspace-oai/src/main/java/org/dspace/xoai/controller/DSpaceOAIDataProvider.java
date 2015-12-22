@@ -145,7 +145,7 @@ public class DSpaceOAIDataProvider
     }
 
     private void closeContext(Context context) {
-        if (context != null && context.isValid())
+        if (context != null)
             context.abort();
     }
 
