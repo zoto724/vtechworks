@@ -1,13 +1,4 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!--
-
-    The contents of this file are subject to the license and copyright
-    detailed in the LICENSE and NOTICE files at the root of the source
-    tree and available online at
-
-    http://www.dspace.org/license/
-
--->
 <beans xmlns="http://www.springframework.org/schema/beans"
        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
        xmlns:context="http://www.springframework.org/schema/context"
@@ -24,13 +15,12 @@
 
     <bean id="solrServiceResourceIndexPlugin" class="org.dspace.discovery.SolrServiceResourceRestrictionPlugin" scope="prototype"/>
     <bean id="SolrServiceSpellIndexingPlugin" class="org.dspace.discovery.SolrServiceSpellIndexingPlugin" scope="prototype"/>
+    <bean id="solrServiceMetadataBrowseIndexingPlugin" class="org.dspace.discovery.SolrServiceMetadataBrowseIndexingPlugin" scope="prototype"/>
 
     <alias name="solrServiceResourceIndexPlugin" alias="org.dspace.discovery.SolrServiceResourceRestrictionPlugin"/>
-
-    <!-- Additional indexing plugin to implement the browse system via SOLR -->
-    <bean id="solrBrowseIndexer" scope="prototype"
-          class="org.dspace.browse.SolrBrowseCreateDAO">
-    </bean>
+    
+    <!-- Additional indexing plugin make filtering by has content in original bundle (like pdf's, images) posible via SOLR -->
+    <bean id="hasContentInOriginalBundle" class="org.dspace.discovery.SolrServiceContentInOriginalBundleFilterPlugin"/>
 
     <!--Bean that is used for mapping communities/collections to certain discovery configurations.-->
     <bean id="org.dspace.discovery.configuration.DiscoveryConfigurationService" class="org.dspace.discovery.configuration.DiscoveryConfigurationService">
@@ -106,7 +96,11 @@
                 <ref bean="searchFilterType" />
                 <ref bean="searchFilterSubject" />
                 <ref bean="searchFilterIssued" />
+<<<<<<< HEAD
                 <ref bean="searchFilterAuthor" />
+=======
+		        <ref bean="searchFilterContentInOriginalBundle"/>
+>>>>>>> aaafc1887bc2e36d28f8d9c37ba8cac67a059689
             </list>
         </property>
         <!-- Set TagCloud configuration per discovery configuration -->
@@ -118,6 +112,7 @@
                 <ref bean="searchFilterAuthor" />
                 <ref bean="searchFilterSubject" />
                 <ref bean="searchFilterIssued" />
+<<<<<<< HEAD
                 <ref bean="searchFilterType" />          
                 <ref bean="searchFilterAbstract" />
                 <ref bean="searchFilterSeries" />
@@ -129,6 +124,9 @@
                 <ref bean="searchFilterAdvisor" />
                 <ref bean="searchFilterCommitteemember" />
                 <ref bean="searchFilterEtdlevel" />
+=======
+		        <ref bean="searchFilterContentInOriginalBundle"/>
+>>>>>>> aaafc1887bc2e36d28f8d9c37ba8cac67a059689
             </list>
         </property>
         <!--The sort filters for the discovery search-->
@@ -223,6 +221,7 @@
                 <ref bean="searchFilterType" />
                 <ref bean="searchFilterSubject" />
                 <ref bean="searchFilterIssued" />
+		        <ref bean="searchFilterContentInOriginalBundle"/>
             </list>
         </property>
         <!-- Set TagCloud configuration per discovery configuration -->
@@ -234,6 +233,7 @@
                 <ref bean="searchFilterAuthor" />
                 <ref bean="searchFilterSubject" />
                 <ref bean="searchFilterIssued" />
+<<<<<<< HEAD
                 <ref bean="searchFilterType" />          
                 <ref bean="searchFilterAbstract" />
                 <ref bean="searchFilterSeries" />
@@ -245,6 +245,9 @@
                 <ref bean="searchFilterAdvisor" />
                 <ref bean="searchFilterCommitteemember" />
                 <ref bean="searchFilterEtdlevel" />
+=======
+		        <ref bean="searchFilterContentInOriginalBundle"/>
+>>>>>>> aaafc1887bc2e36d28f8d9c37ba8cac67a059689
             </list>
         </property>
         <!--The sort filters for the discovery search (same as defaultConfiguration above)-->
@@ -771,8 +774,14 @@
                 <value>dc.creator</value>
             </list>
         </property>
+<<<<<<< HEAD
         <property name="facetLimit" value="5"/>
         <property name="sortOrder" value="COUNT"/>
+=======
+        <property name="facetLimit" value="10"/>
+        <property name="sortOrderSidebar" value="COUNT"/>
+        <property name="sortOrderFilterPage" value="COUNT"/>
+>>>>>>> aaafc1887bc2e36d28f8d9c37ba8cac67a059689
     </bean>
 
     <bean id="searchFilterDepartment" class="org.dspace.discovery.configuration.DiscoverySearchFilterFacet">
@@ -783,6 +792,7 @@
                 <value>thesis.degree.discipline</value>
             </list>
         </property>
+<<<<<<< HEAD
         <property name="sortOrder" value="COUNT"/>
         <property name="facetLimit" value="5"/>
     </bean>
@@ -796,6 +806,12 @@
         </property>
         <property name="sortOrder" value="COUNT"/>
         <property name="facetLimit" value="5"/>
+=======
+        <property name="facetLimit" value="10"/>
+        <property name="sortOrderSidebar" value="COUNT"/>
+        <property name="sortOrderFilterPage" value="COUNT"/>
+        <property name="splitter" value="::"/>
+>>>>>>> aaafc1887bc2e36d28f8d9c37ba8cac67a059689
     </bean>
 
     <bean id="searchFilterIssued" class="org.dspace.discovery.configuration.DiscoverySearchFilterFacet">
@@ -806,7 +822,19 @@
             </list>
         </property>
         <property name="type" value="date"/>
-        <property name="sortOrder" value="VALUE"/>
+        <property name="sortOrderSidebar" value="COUNT"/>
+        <property name="sortOrderFilterPage" value="COUNT"/>
+    </bean>
+    
+    <bean id="searchFilterContentInOriginalBundle" class="org.dspace.discovery.configuration.DiscoverySearchFilterFacet">
+        <property name="indexFieldName" value="has_content_in_original_bundle"/>
+        <property name="metadataFields">
+            <list/>
+        </property>
+        <property name="facetLimit" value="2"/>
+        <property name="type" value="standard"/>
+        <property name="sortOrderSidebar" value="COUNT"/>
+        <property name="sortOrderFilterPage" value="COUNT"/>
     </bean>
 
     <bean id="searchFilterSubject" class="org.dspace.discovery.configuration.HierarchicalSidebarFacetConfiguration">

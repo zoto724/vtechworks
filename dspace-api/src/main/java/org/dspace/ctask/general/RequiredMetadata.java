@@ -8,7 +8,6 @@
 package org.dspace.ctask.general;
 
 import java.io.IOException;
-import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -18,7 +17,7 @@ import org.dspace.app.util.DCInput;
 import org.dspace.app.util.DCInputSet;
 import org.dspace.app.util.DCInputsReader;
 import org.dspace.app.util.DCInputsReaderException;
-import org.dspace.content.Metadatum;
+import org.dspace.content.MetadataValue;
 import org.dspace.content.DSpaceObject;
 import org.dspace.content.Item;
 import org.dspace.core.Constants;
@@ -28,7 +27,7 @@ import org.dspace.curate.Suspendable;
 
 /**
  * RequiredMetadata task compares item metadata with fields 
- * marked as required in input-forms.xml. The task succeeds if all
+ * marked as required in submission-forms.xml. The task succeeds if all
  * required fields are present in the item metadata, otherwise it fails.
  * Primarily a curation task demonstrator.
  *
@@ -38,9 +37,9 @@ import org.dspace.curate.Suspendable;
 public class RequiredMetadata extends AbstractCurationTask
 {
     // map of DCInputSets
-    private DCInputsReader reader = null;
+    protected DCInputsReader reader = null;
     // map of required fields
-    private Map<String, List<String>> reqMap = new HashMap<String, List<String>>();
+    protected Map<String, List<String>> reqMap = new HashMap<String, List<String>>();
     
     @Override 
     public void init(Curator curator, String taskId) throws IOException
@@ -60,7 +59,7 @@ public class RequiredMetadata extends AbstractCurationTask
      * Perform the curation task upon passed DSO
      *
      * @param dso the DSpace object
-     * @throws IOException
+     * @throws IOException if IO error
      */
     @Override
     public int perform(DSpaceObject dso) throws IOException
@@ -81,8 +80,8 @@ public class RequiredMetadata extends AbstractCurationTask
                 sb.append("Item: ").append(handle);
                 for (String req : getReqList(item.getOwningCollection().getHandle()))
                 {
-                    Metadatum[] vals = item.getMetadataByMetadataString(req);
-                    if (vals.length == 0)
+                    List<MetadataValue> vals = itemService.getMetadataByMetadataString(item, req);
+                    if (vals.size() == 0)
                     {
                         sb.append(" missing required field: ").append(req);
                         count++;
@@ -99,10 +98,6 @@ public class RequiredMetadata extends AbstractCurationTask
             {
                 throw new IOException(dcrE.getMessage(), dcrE);
             }
-            catch (SQLException sqlE)
-            {
-                throw new IOException(sqlE.getMessage(), sqlE);
-            }
             return (count == 0) ? Curator.CURATE_SUCCESS : Curator.CURATE_FAIL;
         }
         else
@@ -112,7 +107,7 @@ public class RequiredMetadata extends AbstractCurationTask
         }
     }
     
-    private List<String> getReqList(String handle) throws DCInputsReaderException
+    protected List<String> getReqList(String handle) throws DCInputsReaderException
     {
         List<String> reqList = reqMap.get(handle);
         if (reqList == null)
@@ -122,27 +117,23 @@ public class RequiredMetadata extends AbstractCurationTask
         if (reqList == null)
         {
             reqList = new ArrayList<String>();
-            DCInputSet inputs = reader.getInputs(handle);
-            for (int i = 0; i < inputs.getNumberPages(); i++)
-            {
-                for (DCInput input : inputs.getPageRows(i, true, true))
-                {
-                    if (input.isRequired())
-                    {
-                        StringBuilder sb = new StringBuilder();
-                        sb.append(input.getSchema()).append(".");
-                        sb.append(input.getElement()).append(".");
-                        String qual = input.getQualifier();
-                        if (qual == null)
-                        {
-                            qual = "";
-                        }
-                        sb.append(qual);
-                        reqList.add(sb.toString());
-                    }
-                }
-            }
-            reqMap.put(inputs.getFormName(), reqList);
+            List<DCInputSet> inputSet = reader.getInputsByCollectionHandle(handle);
+			for (DCInputSet inputs : inputSet) {
+				for (DCInput input : inputs.getFields()) {
+					if (input.isRequired()) {
+						StringBuilder sb = new StringBuilder();
+						sb.append(input.getSchema()).append(".");
+						sb.append(input.getElement()).append(".");
+						String qual = input.getQualifier();
+						if (qual == null) {
+							qual = "";
+						}
+						sb.append(qual);
+						reqList.add(sb.toString());
+					}
+				}
+				reqMap.put(inputs.getFormName(), reqList);
+			}
         }
         return reqList;
     }

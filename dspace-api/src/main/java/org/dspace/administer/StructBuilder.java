@@ -28,8 +28,12 @@ import org.apache.xpath.XPathAPI;
 import org.dspace.authorize.AuthorizeException;
 import org.dspace.content.Collection;
 import org.dspace.content.Community;
+import org.dspace.content.factory.ContentServiceFactory;
+import org.dspace.content.service.CollectionService;
+import org.dspace.content.service.CommunityService;
 import org.dspace.core.Context;
-import org.dspace.eperson.EPerson;
+import org.dspace.eperson.factory.EPersonServiceFactory;
+import org.dspace.eperson.service.EPersonService;
 import org.jdom.Element;
 import org.jdom.output.XMLOutputter;
 import org.w3c.dom.Document;
@@ -42,7 +46,7 @@ import org.xml.sax.SAXException;
  * an XML file.
  * 
  * The XML file structure needs to be:
- * 
+ * {@code
  * <import_structure>
  *     <community>
  *         <name>....</name>
@@ -52,7 +56,7 @@ import org.xml.sax.SAXException;
  *         </collection>
  *     </community>
  * </import_structure>
- * 
+ * }
  * it can be arbitrarily deep, and supports all the metadata elements
  * that make up the community and collection metadata.  See the system
  * documentation for more details
@@ -73,61 +77,68 @@ public class StructBuilder
     
     /** a hashtable to hold metadata for the community being worked on */
     private static Map<String, String> communityMap = new HashMap<String, String>();
-    
+
+    protected static CommunityService communityService = ContentServiceFactory.getInstance().getCommunityService();
+    protected static CollectionService collectionService = ContentServiceFactory.getInstance().getCollectionService();
+    protected static EPersonService ePersonService = EPersonServiceFactory.getInstance().getEPersonService();
+
     /**
      * Main method to be run from the command line to import a structure into
      * DSpace
      * 
      * This is of the form:
      * 
-     * StructBuilder -f [xml source] -e [administrator email] -o [output file]
+     * {@code StructBuilder -f [xml source] -e [administrator email] -o [output file]}
      * 
      * The output file will contain exactly the same as the source xml document, but
      * with the handle for each imported item added as an attribute.
+     *
+     * @param argv the command line arguments given
+     * @throws Exception if an error occurs
      */
     public static void main(String[] argv) 
-    	throws Exception
+        throws Exception
     {
         CommandLineParser parser = new PosixParser();
 
-    	Options options = new Options();
+        Options options = new Options();
 
-    	options.addOption( "f", "file", true, "file");
-    	options.addOption( "e", "eperson", true, "eperson");
-    	options.addOption("o", "output", true, "output");
-    	
-    	CommandLine line = parser.parse( options, argv );
-    	
-    	String file = null;
-    	String eperson = null;
-    	String output = null;
-    	
-    	if (line.hasOption('f'))
-    	{
-    	    file = line.getOptionValue('f');
-    	}
-    	
-    	if (line.hasOption('e'))
-    	{
-    	    eperson = line.getOptionValue('e');
-    	}
-    	
-    	if (line.hasOption('o'))
-    	{
-    	    output = line.getOptionValue('o');
-    	}
-    	
-    	if (output == null || eperson == null || file == null)
-    	{
-    	    usage();
-    	    System.exit(0);
-    	}
-    	
+        options.addOption( "f", "file", true, "file");
+        options.addOption( "e", "eperson", true, "eperson");
+        options.addOption("o", "output", true, "output");
+        
+        CommandLine line = parser.parse( options, argv );
+        
+        String file = null;
+        String eperson = null;
+        String output = null;
+        
+        if (line.hasOption('f'))
+        {
+            file = line.getOptionValue('f');
+        }
+        
+        if (line.hasOption('e'))
+        {
+            eperson = line.getOptionValue('e');
+        }
+        
+        if (line.hasOption('o'))
+        {
+            output = line.getOptionValue('o');
+        }
+        
+        if (output == null || eperson == null || file == null)
+        {
+            usage();
+            System.exit(0);
+        }
+        
         // create a context
         Context context = new Context();
         
         // set the context
-        context.setCurrentUser(EPerson.findByEmail(context, eperson));
+        context.setCurrentUser(ePersonService.findByEmail(context, eperson));
  
         // load the XML
         Document document = loadXML(file);
@@ -194,12 +205,12 @@ public class StructBuilder
      * Validate the XML document.  This method does not return, but if validation
      * fails it generates an error and ceases execution
      * 
-     * @param	document	the XML document object
-     * @throws TransformerException
+     * @param    document    the XML document object
+     * @throws TransformerException if transformer error
      * 
      */
     private static void validate(org.w3c.dom.Document document)
-    	throws TransformerException
+        throws TransformerException
     {
         StringBuffer err = new StringBuffer();
         boolean trip = false;
@@ -235,13 +246,13 @@ public class StructBuilder
      * 
      * @param communities the NodeList of communities to validate
      * @param level the level in the XML document that we are at, for the purposes
-     * 			of error reporting
+     *             of error reporting
      * 
      * @return the errors that need to be generated by the calling method, or null if
-     * 			no errors.
+     *             no errors.
      */
     private static String validateCommunities(NodeList communities, int level)
-    	throws TransformerException
+        throws TransformerException
     {
         StringBuffer err = new StringBuffer();
         boolean trip = false;
@@ -250,32 +261,32 @@ public class StructBuilder
         for (int i = 0; i < communities.getLength(); i++)
         {
             Node n = communities.item(i);
-	        NodeList name = XPathAPI.selectNodeList(n, "name");
-	        if (name.getLength() != 1)
-	        {
-	            String pos = Integer.toString(i + 1);
-	            err.append("-The level " + level + " community in position " + pos);
-	            err.append(" does not contain exactly one name field\n");
-	            trip = true;
-	        }
-	        
-	        // validate sub communities
-	        NodeList subCommunities = XPathAPI.selectNodeList(n, "community");
-	        String comErrs = validateCommunities(subCommunities, level + 1);
-	        if (comErrs != null)
-	        {
-	            err.append(comErrs);
-	            trip = true;
-	        }
-	        
-	        // validate collections
-	        NodeList collections = XPathAPI.selectNodeList(n, "collection");
-	        String colErrs = validateCollections(collections, level + 1);
-	        if (colErrs != null)
-	        {
-	            err.append(colErrs);
-	            trip = true;
-	        }
+            NodeList name = XPathAPI.selectNodeList(n, "name");
+            if (name.getLength() != 1)
+            {
+                String pos = Integer.toString(i + 1);
+                err.append("-The level " + level + " community in position " + pos);
+                err.append(" does not contain exactly one name field\n");
+                trip = true;
+            }
+            
+            // validate sub communities
+            NodeList subCommunities = XPathAPI.selectNodeList(n, "community");
+            String comErrs = validateCommunities(subCommunities, level + 1);
+            if (comErrs != null)
+            {
+                err.append(comErrs);
+                trip = true;
+            }
+            
+            // validate collections
+            NodeList collections = XPathAPI.selectNodeList(n, "collection");
+            String colErrs = validateCollections(collections, level + 1);
+            if (colErrs != null)
+            {
+                err.append(colErrs);
+                trip = true;
+            }
         }
         
         if (trip)
@@ -296,7 +307,7 @@ public class StructBuilder
      * @return the errors to be generated by the calling method, or null if none
      */
     private static String validateCollections(NodeList collections, int level)
-    	throws TransformerException
+        throws TransformerException
     {
         StringBuffer err = new StringBuffer();
         boolean trip = false;
@@ -305,14 +316,14 @@ public class StructBuilder
         for (int i = 0; i < collections.getLength(); i++)
         {
             Node n = collections.item(i);
-	        NodeList name = XPathAPI.selectNodeList(n, "name");
-	        if (name.getLength() != 1)
-	        {
-	            String pos = Integer.toString(i + 1);
-	            err.append("-The level " + level + " collection in position " + pos);
-	            err.append(" does not contain exactly one name field\n");
-	            trip = true;
-	        }
+            NodeList name = XPathAPI.selectNodeList(n, "name");
+            if (name.getLength() != 1)
+            {
+                String pos = Integer.toString(i + 1);
+                err.append("-The level " + level + " collection in position " + pos);
+                err.append(" does not contain exactly one name field\n");
+                trip = true;
+            }
         }
         
         if (trip)
@@ -332,7 +343,7 @@ public class StructBuilder
      * @return the DOM representation of the XML file
      */
     private static org.w3c.dom.Document loadXML(String filename) 
-    	throws IOException, ParserConfigurationException, SAXException
+        throws IOException, ParserConfigurationException, SAXException
     {
         DocumentBuilder builder = DocumentBuilderFactory.newInstance()
                 .newDocumentBuilder();
@@ -375,10 +386,10 @@ public class StructBuilder
      * @param parent the parent community of the nodelist of communities to create
      * 
      * @return an element array containing additional information regarding the 
-     * 			created communities (e.g. the handles they have been assigned)
+     *             created communities (e.g. the handles they have been assigned)
      */
     private static Element[] handleCommunities(Context context, NodeList communities, Community parent)
-    	throws TransformerException, SQLException, Exception
+        throws TransformerException, SQLException, Exception
     {
         Element[] elements = new Element[communities.getLength()];
         
@@ -390,15 +401,15 @@ public class StructBuilder
             // create the community or sub community
             if (parent != null)
             {
-                community = parent.createSubcommunity();
+                community = communityService.create(parent, context);
             }
             else
             {
-                community = Community.create(null, context);
+                community = communityService.create(null, context);
             }
             
             // default the short description to be an empty string
-            community.setMetadata("short_description", " ");
+            communityService.setMetadata(context, community, "short_description", " ");
             
             // now update the metadata
             Node tn = communities.item(i);
@@ -407,7 +418,7 @@ public class StructBuilder
                 NodeList nl = XPathAPI.selectNodeList(tn, entry.getKey());
                 if (nl.getLength() == 1)
                 {
-                    community.setMetadata(entry.getValue(), getStringValue(nl.item(0)));
+                    communityService.setMetadata(context, community, entry.getValue(), getStringValue(nl.item(0)));
                 }
             }
             
@@ -420,7 +431,7 @@ public class StructBuilder
             // difficult
             // to isolate the community that already exists without hitting
             // the database directly.
-            community.update();
+            communityService.update(context, community);
             
             // build the element with the handle that identifies the new
             // community
@@ -433,34 +444,34 @@ public class StructBuilder
             element.setAttribute("identifier", community.getHandle());
             
             Element nameElement = new Element("name");
-            nameElement.setText(community.getMetadata("name"));
+            nameElement.setText(communityService.getMetadata(community, "name"));
             element.addContent(nameElement);
             
-            if (community.getMetadata("short_description") != null)
+            if (communityService.getMetadata(community, "short_description") != null)
             {
                 Element descriptionElement = new Element("description");
-                descriptionElement.setText(community.getMetadata("short_description"));
+                descriptionElement.setText(communityService.getMetadata(community, "short_description"));
                 element.addContent(descriptionElement);
             }
             
-            if (community.getMetadata("introductory_text") != null)
+            if (communityService.getMetadata(community, "introductory_text") != null)
             {
                 Element introElement = new Element("intro");
-                introElement.setText(community.getMetadata("introductory_text"));
+                introElement.setText(communityService.getMetadata(community, "introductory_text"));
                 element.addContent(introElement);
             }
             
-            if (community.getMetadata("copyright_text") != null)
+            if (communityService.getMetadata(community, "copyright_text") != null)
             {
                 Element copyrightElement = new Element("copyright");
-                copyrightElement.setText(community.getMetadata("copyright_text"));
+                copyrightElement.setText(communityService.getMetadata(community, "copyright_text"));
                 element.addContent(copyrightElement);
             }
             
-            if (community.getMetadata("side_bar_text") != null)
+            if (communityService.getMetadata(community, "side_bar_text") != null)
             {
                 Element sidebarElement = new Element("sidebar");
-                sidebarElement.setText(community.getMetadata("side_bar_text"));
+                sidebarElement.setText(communityService.getMetadata(community, "side_bar_text"));
                 element.addContent(sidebarElement);
             }
             
@@ -496,20 +507,20 @@ public class StructBuilder
      * @param parent the parent community to whom the collections belong
      * 
      * @return an Element array containing additional information about the
-     * 			created collections (e.g. the handle)
+     *             created collections (e.g. the handle)
      */
     private static Element[] handleCollections(Context context, NodeList collections, Community parent)
-    	throws TransformerException, SQLException, AuthorizeException, IOException, Exception
+        throws TransformerException, SQLException, AuthorizeException, IOException, Exception
     {
         Element[] elements = new Element[collections.getLength()];
         
         for (int i = 0; i < collections.getLength(); i++)
         {
             Element element = new Element("collection");
-            Collection collection = parent.createCollection();
+            Collection collection = collectionService.create(context, parent);
             
             // default the short description to the empty string
-            collection.setMetadata("short_description", " ");
+            collectionService.setMetadata(context, collection, "short_description", " ");
             
             // import the rest of the metadata
             Node tn = collections.item(i);
@@ -518,57 +529,57 @@ public class StructBuilder
                 NodeList nl = XPathAPI.selectNodeList(tn, entry.getKey());
                 if (nl.getLength() == 1)
                 {
-                    collection.setMetadata(entry.getValue(), getStringValue(nl.item(0)));
+                    collectionService.setMetadata(context, collection, entry.getValue(), getStringValue(nl.item(0)));
                 }
             }
-            
-            collection.update();
+
+            collectionService.update(context, collection);
             
             element.setAttribute("identifier", collection.getHandle());
             
             Element nameElement = new Element("name");
-            nameElement.setText(collection.getMetadata("name"));
+            nameElement.setText(collectionService.getMetadata(collection, "name"));
             element.addContent(nameElement);
             
-            if (collection.getMetadata("short_description") != null)
+            if (collectionService.getMetadata(collection, "short_description") != null)
             {
                 Element descriptionElement = new Element("description");
-                descriptionElement.setText(collection.getMetadata("short_description"));
+                descriptionElement.setText(collectionService.getMetadata(collection, "short_description"));
                 element.addContent(descriptionElement);
             }
             
-            if (collection.getMetadata("introductory_text") != null)
+            if (collectionService.getMetadata(collection, "introductory_text") != null)
             {
                 Element introElement = new Element("intro");
-                introElement.setText(collection.getMetadata("introductory_text"));
+                introElement.setText(collectionService.getMetadata(collection, "introductory_text"));
                 element.addContent(introElement);
             }
             
-            if (collection.getMetadata("copyright_text") != null)
+            if (collectionService.getMetadata(collection, "copyright_text") != null)
             {
                 Element copyrightElement = new Element("copyright");
-                copyrightElement.setText(collection.getMetadata("copyright_text"));
+                copyrightElement.setText(collectionService.getMetadata(collection, "copyright_text"));
                 element.addContent(copyrightElement);
             }
             
-            if (collection.getMetadata("side_bar_text") != null)
+            if (collectionService.getMetadata(collection, "side_bar_text") != null)
             {
                 Element sidebarElement = new Element("sidebar");
-                sidebarElement.setText(collection.getMetadata("side_bar_text"));
+                sidebarElement.setText(collectionService.getMetadata(collection, "side_bar_text"));
                 element.addContent(sidebarElement);
             }
             
-            if (collection.getMetadata("license") != null)
+            if (collectionService.getMetadata(collection, "license") != null)
             {
                 Element sidebarElement = new Element("license");
-                sidebarElement.setText(collection.getMetadata("license"));
+                sidebarElement.setText(collectionService.getMetadata(collection, "license"));
                 element.addContent(sidebarElement);
             }
             
-            if (collection.getMetadata("provenance_description") != null)
+            if (collectionService.getMetadata(collection, "provenance_description") != null)
             {
                 Element sidebarElement = new Element("provenance");
-                sidebarElement.setText(collection.getMetadata("provenance_description"));
+                sidebarElement.setText(collectionService.getMetadata(collection, "provenance_description"));
                 element.addContent(sidebarElement);
             }
             

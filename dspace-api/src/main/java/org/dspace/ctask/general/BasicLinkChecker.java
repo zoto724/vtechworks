@@ -8,7 +8,7 @@
 package org.dspace.ctask.general;
 
 import org.apache.log4j.Logger;
-import org.dspace.content.Metadatum;
+import org.dspace.content.MetadataValue;
 import org.dspace.content.DSpaceObject;
 import org.dspace.content.Item;
 import org.dspace.curate.AbstractCurationTask;
@@ -101,11 +101,11 @@ public class BasicLinkChecker extends AbstractCurationTask
     protected List<String> getURLs(Item item)
     {
         // Get URIs from anyschema.anyelement.uri.*
-        Metadatum[] urls = item.getMetadata(Item.ANY, Item.ANY, "uri", Item.ANY);
+        List<MetadataValue> urls = itemService.getMetadata(item, Item.ANY, Item.ANY, "uri", Item.ANY);
         ArrayList<String> theURLs = new ArrayList<String>();
-        for (Metadatum url : urls)
+        for (MetadataValue url : urls)
         {
-            theURLs.add(url.value);
+            theURLs.add(url.getValue());
         }
         return theURLs;
     }
@@ -113,7 +113,10 @@ public class BasicLinkChecker extends AbstractCurationTask
     /**
      * Check the URL and perform appropriate reporting
      *
-     * @param url The URL to check
+     * @param url
+     *     The URL to check
+     * @param results
+     *     Result string with HTTP status codes
      * @return If the URL was OK or not
      */
     protected boolean checkURL(String url, StringBuilder results)
@@ -165,7 +168,7 @@ public class BasicLinkChecker extends AbstractCurationTask
      * @param item The item to get a description of
      * @return The handle, or in workflow
      */
-    private static String getItemHandle(Item item)
+    protected String getItemHandle(Item item)
     {
         String handle = item.getHandle();
         return (handle != null) ? handle: " in workflow";

@@ -17,17 +17,27 @@ import java.rmi.dgc.VMID;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.text.ParseException;
+import java.text.SimpleDateFormat;
 import java.util.Arrays;
+import java.util.Calendar;
+import java.util.Collections;
+import java.util.Date;
+import java.util.GregorianCalendar;
+import java.util.List;
 import java.util.Random;
+import java.util.StringTokenizer;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import java.util.Date;
-import java.util.Calendar;
-import java.util.GregorianCalendar;
-import java.text.SimpleDateFormat;
-import java.text.ParseException;
-import com.coverity.security.Escape;
+
+import org.apache.commons.lang3.StringUtils;
 import org.apache.log4j.Logger;
+import org.dspace.app.util.DCInput;
+import org.dspace.app.util.DCInputSet;
+import org.dspace.app.util.DCInputsReader;
+import org.dspace.app.util.DCInputsReaderException;
+import org.dspace.content.Collection;
+
+import com.coverity.security.Escape;
 
 /**
  * Utility functions for DSpace.
@@ -218,6 +228,7 @@ public final class Utils
      *            The InputStream to obtain data from.
      * @param output
      *            The OutputStream to copy data to.
+     * @throws IOException if IO error
      */
     public static void copy(final InputStream input, final OutputStream output)
             throws IOException
@@ -254,6 +265,7 @@ public final class Utils
      *            The InputStream to obtain data from.
      * @param destination
      *            The OutputStream to copy data to.
+     * @throws IOException if IO error
      */
     public static void bufferedCopy(final InputStream source,
             final OutputStream destination) throws IOException
@@ -268,8 +280,8 @@ public final class Utils
     /**
      * Replace characters that could be interpreted as HTML codes with symbolic
      * references (entities). This function should be called before displaying
-     * any metadata fields that could contain the characters " <", ">", "&",
-     * "'", and double quotation marks. This will effectively disable HTML links
+     * any metadata fields that could contain the characters {@code "<", ">", "&", "'"},
+     * and double quotation marks. This will effectively disable HTML links
      * in metadata.
      * 
      * @param value
@@ -284,7 +296,7 @@ public final class Utils
     }
 
     /**
-     * Utility method to parse durations defined as \d+[smhdwy] (seconds,
+     * Utility method to parse durations defined as {@code \d+[smhdwy]} (seconds,
      * minutes, hours, days, weeks, years)
      * 
      * @param duration
@@ -412,4 +424,55 @@ public final class Utils
         int rl = result.length();
         return result.substring(0, rl-2) + ":" + result.substring(rl-2);
     }
+
+    public static <E> java.util.Collection<E> emptyIfNull(java.util.Collection<E> collection) {
+        return collection == null ? Collections.<E>emptyList() : collection;
+    }
+    
+	/**
+	 * Utility method to extract schema, element, qualifier from the metadata field key 
+	 * Keep in mind that this method try to auto discover the common separator used in DSpace ("_" or ".") 
+	 * 
+	 * Return an array of token with size 3 which contains:
+	 * schema = tokens[0];
+	 * element = tokens[1];
+	 * qualifier = tokens[2]; //it can be empty string
+	 * 
+	 * @param metadata (the field in the form dc.title or dc_title)
+	 * @return array of tokens 
+	 */
+	public static String[] tokenize(String metadata) {
+		String separator = metadata.contains("_") ? "_" : ".";
+		StringTokenizer dcf = new StringTokenizer(metadata, separator);
+
+		String[] tokens = { "", "", "" };
+		int i = 0;
+		while (dcf.hasMoreTokens()) {
+			tokens[i] = dcf.nextToken().trim();
+			i++;
+		}
+		// Tokens contains:
+		// schema = tokens[0];
+		// element = tokens[1];
+		// qualifier = tokens[2];
+		return tokens;
+
+	}
+	
+	/**
+	 * Make the metadata field key using the separator.
+	 * 
+	 * @param schema
+	 * @param element
+	 * @param qualifier
+	 * @param separator (DSpace common separator are "_" or ".")
+	 * @return metadata field key
+	 */
+	public static String standardize(String schema, String element, String qualifier, String separator) {
+		if (StringUtils.isBlank(qualifier)) {
+			return schema + separator + element;
+		} else {
+			return schema + separator + element + separator + qualifier;
+		}
+	}
 }

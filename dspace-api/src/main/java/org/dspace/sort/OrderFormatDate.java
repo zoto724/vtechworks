@@ -9,12 +9,13 @@ package org.dspace.sort;
 
 /**
  * Standard date ordering delegate implementation. The only "special" need is
- * for treat with date with only "small" year < 4 digit
+ * to treat dates with less than 4-digit year.
  * 
  * @author Andrea Bollini
  */
 public class OrderFormatDate implements OrderFormatDelegate
 {
+    @Override
     public String makeSortString(String value, String language)
     {
         int padding = 0;

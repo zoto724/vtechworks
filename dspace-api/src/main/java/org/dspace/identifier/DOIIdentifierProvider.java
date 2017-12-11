@@ -10,26 +10,34 @@ package org.dspace.identifier;
 
 import java.sql.SQLException;
 import java.util.ArrayList;
+<<<<<<< HEAD
+=======
+import java.util.Arrays;
+>>>>>>> aaafc1887bc2e36d28f8d9c37ba8cac67a059689
 import java.util.List;
+
+import org.apache.commons.lang.ObjectUtils;
 import org.dspace.authorize.AuthorizeException;
-import org.dspace.content.Metadatum;
+import org.dspace.content.MetadataValue;
 import org.dspace.content.DSpaceObject;
-import org.dspace.content.FormatIdentifier;
 import org.dspace.content.Item;
+import org.dspace.content.factory.ContentServiceFactory;
+import org.dspace.content.service.ItemService;
+import org.dspace.core.Constants;
 import org.dspace.core.Context;
 import org.dspace.identifier.doi.DOIConnector;
 import org.dspace.identifier.doi.DOIIdentifierException;
-import org.dspace.storage.rdbms.DatabaseManager;
-import org.dspace.storage.rdbms.TableRow;
+import org.dspace.identifier.service.DOIService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Required;
 
 /**
  * Provide service for DOIs using DataCite.
  * 
  * <p>This class handles reservation, registration and deletion of DOIs using
- * the direct API from {@link <a href="http://www.datacite.org">DataCite</a>}.
+ * the direct API from <a href="http://www.datacite.org">DataCite</a>.
  * Please pay attention that some members of DataCite offer special services
  * and want their customers to use special APIs. If you are unsure ask your
  * registration agency.</p>
@@ -59,6 +67,7 @@ public class DOIIdentifierProvider
     
     static final String CFG_PREFIX = "identifier.doi.prefix";
     static final String CFG_NAMESPACE_SEPARATOR = "identifier.doi.namespaceseparator";
+    static final char SLASH = '/';
         
     // Metadata field name elements
     // TODO: move these to MetadataSchema or some such?
@@ -75,7 +84,17 @@ public class DOIIdentifierProvider
     public static final Integer UPDATE_BEFORE_REGISTRATION = 7;
     public static final Integer TO_BE_DELETED = 8;
     public static final Integer DELETED = 9;
-    
+
+    @Autowired(required = true)
+    protected DOIService doiService;
+    @Autowired(required = true)
+    protected ContentServiceFactory contentServiceFactory;
+    @Autowired(required = true)
+    protected ItemService itemService;
+
+    protected DOIIdentifierProvider() {
+    }
+
     /**
      * Prefix of DOI namespace. Set in dspace.cfg.
      */
@@ -128,7 +147,7 @@ public class DOIIdentifierProvider
      * This identifier provider supports identifiers of type
      * {@link org.dspace.identifier.DOI}.
      * @param identifier to check if it will be supported by this provider.
-     * @return 
+     * @return boolean
      */
     @Override
     public boolean supports(Class<? extends Identifier> identifier)
@@ -144,17 +163,14 @@ public class DOIIdentifierProvider
      *  <li>http://dx.doi.org/10.123/456</li>
      * </ul>
      * @param identifier to check if it is in a supported format.
-     * @return 
+     * @return boolean
      */
     @Override
     public boolean supports(String identifier)
     {
         try {
-            DOI.formatIdentifier(identifier);
-        } catch (IdentifierException e) {
-            return false;
-        } catch (IllegalArgumentException e)
-        {
+            doiService.formatIdentifier(identifier);
+        } catch (IdentifierException | IllegalArgumentException ex) {
             return false;
         }
         return true;
@@ -168,7 +184,7 @@ public class DOIIdentifierProvider
         String doi = mint(context, dso);
         // register tries to reserve doi if it's not already.
         // So we don't have to reserve it here.
-        this.register(context, dso, doi);
+        register(context, dso, doi);
         return doi;
     }
 
@@ -176,8 +192,8 @@ public class DOIIdentifierProvider
     public void register(Context context, DSpaceObject dso, String identifier)
             throws IdentifierException
     {
-        String doi = DOI.formatIdentifier(identifier);
-        TableRow doiRow = null;
+        String doi = doiService.formatIdentifier(identifier);
+        DOI doiRow = null;
 
         // search DOI in our db
         try
@@ -188,24 +204,23 @@ public class DOIIdentifierProvider
             throw new RuntimeException("Error in database conncetion.", ex);
         }
 
-        if (DELETED == doiRow.getIntColumn("status") ||
-                TO_BE_DELETED == doiRow.getIntColumn("status"))
+        if (DELETED.equals(doiRow.getStatus()) ||
+                TO_BE_DELETED.equals(doiRow.getStatus()))
         {
             throw new DOIIdentifierException("You tried to register a DOI that "
                     + "is marked as DELETED.", DOIIdentifierException.DOI_IS_DELETED);
         }
 
         // Check status of DOI
-        if (IS_REGISTERED == doiRow.getIntColumn("status"))
+        if (IS_REGISTERED.equals(doiRow.getStatus()))
         {
             return;
         }
         
         // change status of DOI
-        doiRow.setColumn("status", TO_BE_REGISTERED);
+        doiRow.setStatus(TO_BE_REGISTERED);
         try {
-            DatabaseManager.update(context, doiRow);
-            context.commit();
+            doiService.update(context, doiRow);
         }
         catch (SQLException sqle)
         {
@@ -216,25 +231,25 @@ public class DOIIdentifierProvider
 
     /**
      * @param context
+     *     The relevant DSpace Context.
      * @param dso DSpaceObject the DOI should be reserved for. Some metadata of
-     *            this object will be send to the registration agency.
+     *     this object will be send to the registration agency.
      * @param identifier DOI to register in a format that
-     *                   {@link FormatIdentifier(String)} accepts.
+     *     {@link org.dspace.identifier.service.DOIService#formatIdentifier(String)} accepts.
      * @throws IdentifierException If the format of {@code identifier} was
-     *                             unrecognized or if it was impossible to 
-     *                             reserve the DOI (registration agency denied 
-     *                             for some reason, see logs).
+     *     unrecognized or if it was impossible to 
+     *     reserve the DOI (registration agency denied 
+     *     for some reason, see logs).
      * @throws IllegalArgumentException If {@code identifier} is a DOI already
-     *                                  registered for another DSpaceObject then
-     *                                  {@code dso}.
-     * @see IdentifierProvider.reserve(Context, DSpaceObject, String)
+     *     registered for another DSpaceObject then {@code dso}.
+     * @see org.dspace.identifier.IdentifierProvider#reserve(Context, DSpaceObject, String)
      */
     @Override
     public void reserve(Context context, DSpaceObject dso, String identifier)
             throws IdentifierException, IllegalArgumentException
     {
-        String doi = DOI.formatIdentifier(identifier);
-        TableRow doiRow = null;
+        String doi = doiService.formatIdentifier(identifier);
+        DOI doiRow = null;
         
         try {
             // if the doi is in our db already loadOrCreateDOI just returns.
@@ -246,14 +261,18 @@ public class DOIIdentifierProvider
             throw new RuntimeException(sqle);
         }
 
-        if (!doiRow.isColumnNull("status")) {
+        if (doiRow.getStatus() != null) {
             return;
         } 
                 
+<<<<<<< HEAD
         doiRow.setColumn("status", TO_BE_RESERVED);
+=======
+        doiRow.setStatus(TO_BE_RESERVED);
+>>>>>>> aaafc1887bc2e36d28f8d9c37ba8cac67a059689
         try
         {
-            DatabaseManager.update(context, doiRow);
+            doiService.update(context, doiRow);
         }
         catch (SQLException sqle)
         {
@@ -264,12 +283,12 @@ public class DOIIdentifierProvider
     public void reserveOnline(Context context, DSpaceObject dso, String identifier)
             throws IdentifierException, IllegalArgumentException, SQLException
     {        
-        String doi = DOI.formatIdentifier(identifier);
+        String doi = doiService.formatIdentifier(identifier);
         // get TableRow and ensure DOI belongs to dso regarding our db
-        TableRow doiRow = loadOrCreateDOI(context, dso, doi);
+        DOI doiRow = loadOrCreateDOI(context, dso, doi);
         
-        if (DELETED == doiRow.getIntColumn("status") ||
-                TO_BE_DELETED == doiRow.getIntColumn("status"))
+        if (DELETED.equals(doiRow.getStatus()) ||
+                TO_BE_DELETED.equals(doiRow.getStatus()))
         {
             throw new DOIIdentifierException("You tried to reserve a DOI that "
                     + "is marked as DELETED.", DOIIdentifierException.DOI_IS_DELETED);
@@ -277,19 +296,19 @@ public class DOIIdentifierProvider
         
         connector.reserveDOI(context, dso, doi);
         
-        doiRow.setColumn("status", IS_RESERVED);
-        DatabaseManager.update(context, doiRow);
+        doiRow.setStatus(IS_RESERVED);
+        doiService.update(context, doiRow);
     }
 
     public void registerOnline(Context context, DSpaceObject dso, String identifier)
             throws IdentifierException, IllegalArgumentException, SQLException
     {
-        String doi = DOI.formatIdentifier(identifier);
+        String doi = doiService.formatIdentifier(identifier);
         // get TableRow and ensure DOI belongs to dso regarding our db
-        TableRow doiRow = loadOrCreateDOI(context, dso, doi);
+        DOI doiRow = loadOrCreateDOI(context, dso, doi);
         
-        if (DELETED == doiRow.getIntColumn("status") ||
-                TO_BE_DELETED == doiRow.getIntColumn("status"))
+        if (DELETED.equals(doiRow.getStatus()) ||
+                TO_BE_DELETED.equals(doiRow.getStatus()))
         {
             throw new DOIIdentifierException("You tried to register a DOI that "
                     + "is marked as DELETED.", DOIIdentifierException.DOI_IS_DELETED);
@@ -326,56 +345,61 @@ public class DOIIdentifierProvider
             throw new RuntimeException(sqle);
         }
         
-        doiRow.setColumn("status", IS_REGISTERED);
-        DatabaseManager.update(context, doiRow);
-        dso.resetIdentifiersCache();
+        doiRow.setStatus(IS_REGISTERED);
+        doiService.update(context, doiRow);
     }
     
     public void updateMetadata(Context context, DSpaceObject dso, String identifier)
             throws IdentifierException, IllegalArgumentException, SQLException 
     {
-        String doi = DOI.formatIdentifier(identifier);
-        TableRow doiRow = null;
-        
-        doiRow = loadOrCreateDOI(context, dso, doi);
+        String doi = doiService.formatIdentifier(identifier);
+        DOI doiRow = loadOrCreateDOI(context, dso, doi);
 
-        if (DELETED == doiRow.getIntColumn("status") ||
-                TO_BE_DELETED == doiRow.getIntColumn("status"))
+        if (DELETED.equals(doiRow.getStatus()) ||
+                TO_BE_DELETED.equals(doiRow.getStatus()))
         {
             throw new DOIIdentifierException("You tried to register a DOI that "
                     + "is marked as DELETED.", DOIIdentifierException.DOI_IS_DELETED);
         }
 
-        if (IS_REGISTERED == doiRow.getIntColumn("status")) 
+        if (IS_REGISTERED.equals(doiRow.getStatus()))
         {
-            doiRow.setColumn("status", UPDATE_REGISTERED);
+            doiRow.setStatus(UPDATE_REGISTERED);
         }
-        else if (TO_BE_REGISTERED == doiRow.getIntColumn("status")) 
+        else if (TO_BE_REGISTERED.equals(doiRow.getStatus()))
         {
+<<<<<<< HEAD
             doiRow.setColumn("status", UPDATE_BEFORE_REGISTRATION);
+=======
+            doiRow.setStatus(UPDATE_BEFORE_REGISTRATION);
+>>>>>>> aaafc1887bc2e36d28f8d9c37ba8cac67a059689
         }
-        else if (IS_RESERVED == doiRow.getIntColumn("status")) 
+        else if (IS_RESERVED.equals(doiRow.getStatus()))
         {
+<<<<<<< HEAD
             doiRow.setColumn("status", UPDATE_RESERVED);
+=======
+            doiRow.setStatus(UPDATE_RESERVED);
+>>>>>>> aaafc1887bc2e36d28f8d9c37ba8cac67a059689
         }
         else
         {
             return;
         }
 
-        DatabaseManager.update(context, doiRow);
+        doiService.update(context, doiRow);
     }
     
     public void updateMetadataOnline(Context context, DSpaceObject dso, String identifier)
             throws IdentifierException, SQLException
     {
-        String doi = DOI.formatIdentifier(identifier);
+        String doi = doiService.formatIdentifier(identifier);
 
         // ensure DOI belongs to dso regarding our db
-        TableRow doiRow = null;
+        DOI doiRow = null;
         try
         {
-            doiRow = DatabaseManager.findByUnique(context, "Doi", "doi", doi.substring(DOI.SCHEME.length()));
+            doiRow = doiService.findByDoi(context, doi.substring(DOI.SCHEME.length()));
         }
         catch (SQLException sqle)
         {
@@ -390,19 +414,18 @@ public class DOIIdentifierProvider
             throw new DOIIdentifierException("Unable to find DOI.",
                     DOIIdentifierException.DOI_DOES_NOT_EXIST);
         }
-        if (doiRow.getIntColumn("resource_id") != dso.getID() ||
-                doiRow.getIntColumn("resource_type_id") != dso.getType())
+        if (!ObjectUtils.equals(doiRow.getDSpaceObject(), dso))
         {
             log.error("Refuse to update metadata of DOI {} with the metadata of "
                     + " an object ({}/{}) the DOI is not dedicated to.",
-                    new String[] {doi, dso.getTypeText(), Integer.toString(dso.getID())});
+                    new String[] {doi, contentServiceFactory.getDSpaceObjectService(dso).getTypeText(dso), dso.getID().toString()});
             throw new DOIIdentifierException("Cannot update DOI metadata: "
                     + "DOI and DSpaceObject does not match!",
                     DOIIdentifierException.MISMATCH);
         }
 
-        if (DELETED == doiRow.getIntColumn("status") ||
-                TO_BE_DELETED == doiRow.getIntColumn("status"))
+        if (DELETED.equals(doiRow.getStatus()) ||
+                TO_BE_DELETED.equals(doiRow.getStatus()))
         {
             throw new DOIIdentifierException("You tried to update the metadata"
                     + "of a DOI that is marked as DELETED.",
@@ -411,20 +434,28 @@ public class DOIIdentifierProvider
         
         connector.updateMetadata(context, dso, doi);
         
-        if (UPDATE_REGISTERED == doiRow.getIntColumn("status")) 
+        if (UPDATE_REGISTERED.equals(doiRow.getStatus()))
         {
-            doiRow.setColumn("status", IS_REGISTERED);
+            doiRow.setStatus(IS_REGISTERED);
         }
+<<<<<<< HEAD
         else if (UPDATE_BEFORE_REGISTRATION == doiRow.getIntColumn("status"))
+=======
+        else if (UPDATE_BEFORE_REGISTRATION.equals(doiRow.getStatus()))
+>>>>>>> aaafc1887bc2e36d28f8d9c37ba8cac67a059689
         {
-            doiRow.setColumn("status", TO_BE_REGISTERED);
+            doiRow.setStatus(TO_BE_REGISTERED);
         }
+<<<<<<< HEAD
         else if (UPDATE_RESERVED == doiRow.getIntColumn("status"))
+=======
+        else if (UPDATE_RESERVED.equals(doiRow.getStatus()))
+>>>>>>> aaafc1887bc2e36d28f8d9c37ba8cac67a059689
         {
-            doiRow.setColumn("status", IS_RESERVED);
+            doiRow.setStatus(IS_RESERVED);
         }
         
-        DatabaseManager.update(context, doiRow);
+        doiService.update(context, doiRow);
     }
     
     @Override
@@ -439,17 +470,17 @@ public class DOIIdentifierProvider
         catch (SQLException e)
         {
             log.error("Error while attemping to retrieve information about a DOI for "
-                    + dso.getTypeText() + " with ID " + dso.getID() + ".");
+                    + contentServiceFactory.getDSpaceObjectService(dso).getTypeText(dso) + " with ID " + dso.getID() + ".");
             throw new RuntimeException("Error while attempting to retrieve " +
-                    "information about a DOI for " + dso.getTypeText() + 
+                    "information about a DOI for " + contentServiceFactory.getDSpaceObjectService(dso).getTypeText(dso) + 
                     " with ID " + dso.getID() + ".", e);
         }
         if (null == doi)
         {
             try
             {
-                TableRow doiRow = loadOrCreateDOI(context, dso, null);
-                doi = DOI.SCHEME + doiRow.getStringColumn("doi");
+                DOI doiRow = loadOrCreateDOI(context, dso, null);
+                doi = DOI.SCHEME + doiRow.getDoi();
                 
             }
             catch (SQLException e)
@@ -457,7 +488,7 @@ public class DOIIdentifierProvider
                 log.error("Error while creating new DOI for Object of " +
                         "ResourceType {} with id {}.", dso.getType(), dso.getID());
                 throw new RuntimeException("Error while attempting to create a " +
-                        "new DOI for " + dso.getTypeText() + " with ID " + 
+                        "new DOI for " + contentServiceFactory.getDSpaceObjectService(dso).getTypeText(dso) + " with ID " + 
                         dso.getID() + ".", e);
             }
         }
@@ -470,7 +501,7 @@ public class DOIIdentifierProvider
     {
         String doi = null;
         try {
-            doi = DOI.formatIdentifier(identifier);
+            doi = doiService.formatIdentifier(identifier);
         } catch (IdentifierException e) {
             throw new IdentifierNotResolvableException(e);
         }
@@ -512,7 +543,7 @@ public class DOIIdentifierProvider
         if (null == doi)
         {
             throw new IdentifierNotFoundException("No DOI for DSpaceObject of type "
-                    + dso.getTypeText() + " with ID " + dso.getID() + " found.");
+                    + contentServiceFactory.getDSpaceObjectService(dso).getTypeText(dso) + " with ID " + dso.getID() + " found.");
         }
         
         return doi;
@@ -535,9 +566,9 @@ public class DOIIdentifierProvider
         catch (SQLException ex)
         {
             log.error("Error while attemping to retrieve information about a DOI for "
-                    + dso.getTypeText() + " with ID " + dso.getID() + ".", ex);
+                    + contentServiceFactory.getDSpaceObjectService(dso).getTypeText(dso) + " with ID " + dso.getID() + ".", ex);
             throw new RuntimeException("Error while attempting to retrieve " +
-                    "information about a DOI for " + dso.getTypeText() + 
+                    "information about a DOI for " + contentServiceFactory.getDSpaceObjectService(dso).getTypeText(dso) + 
                     " with ID " + dso.getID() + ".", ex);
         }
         
@@ -554,18 +585,18 @@ public class DOIIdentifierProvider
         catch (AuthorizeException ex)
         {
             log.error("Error while removing a DOI out of the metadata of an "
-                    + dso.getTypeText() + " with ID " + dso.getID() + ".", ex);
+                    + contentServiceFactory.getDSpaceObjectService(dso).getTypeText(dso) + " with ID " + dso.getID() + ".", ex);
             throw new RuntimeException("Error while removing a DOI out of the "
-                    + "metadata of an " + dso.getTypeText() + " with ID "
+                    + "metadata of an " + contentServiceFactory.getDSpaceObjectService(dso).getTypeText(dso) + " with ID "
                     + dso.getID() + ".", ex);
 
         }
         catch (SQLException ex)
         {
             log.error("Error while removing a DOI out of the metadata of an "
-                    + dso.getTypeText() + " with ID " + dso.getID() + ".", ex);
+                    + contentServiceFactory.getDSpaceObjectService(dso).getTypeText(dso) + " with ID " + dso.getID() + ".", ex);
             throw new RuntimeException("Error while removing a DOI out of the "
-                    + "metadata of an " + dso.getTypeText() + " with ID "
+                    + "metadata of an " + contentServiceFactory.getDSpaceObjectService(dso).getTypeText(dso) + " with ID "
                     + dso.getID() + ".", ex);
         }
     }
@@ -574,13 +605,12 @@ public class DOIIdentifierProvider
     public void delete(Context context, DSpaceObject dso, String identifier)
             throws IdentifierException
     {
-        String doi = DOI.formatIdentifier(identifier);
-        TableRow doiRow = null;
+        String doi = doiService.formatIdentifier(identifier);
+        DOI doiRow = null;
         
         try
         {
-            doiRow = DatabaseManager.findByUnique(context, "Doi", "doi",
-                                            doi.substring(DOI.SCHEME.length()));
+            doiRow = doiService.findByDoi(context, doi.substring(DOI.SCHEME.length()));
         }
         catch (SQLException sqle)
         {
@@ -590,8 +620,7 @@ public class DOIIdentifierProvider
         // check if DOI belongs to dso
         if (null != doiRow)
         {
-            if (doiRow.getIntColumn("resource_id") != dso.getID() ||
-                    doiRow.getIntColumn("resource_type_id") != dso.getType())
+            if (!ObjectUtils.equals(dso, doiRow.getDSpaceObject()))
             {
                 throw new DOIIdentifierException("Trying to delete a DOI out of "
                         + "an object that is not addressed by the DOI.",
@@ -621,17 +650,17 @@ public class DOIIdentifierProvider
         // change doi status in db if necessary.
         if (null != doiRow)
         {
-            if(doiRow.isColumnNull("status"))
+            doiRow.setDSpaceObject(null);
+            if(doiRow.getStatus() == null)
             {
-            doiRow.setColumn("status", DELETED);
+            doiRow.setStatus(DELETED);
             }
             else
             {
-            doiRow.setColumn("status", TO_BE_DELETED);
+            doiRow.setStatus(TO_BE_DELETED);
             }
             try {
-                DatabaseManager.update(context, doiRow);
-                context.commit();
+                doiService.update(context, doiRow);
             }
             catch (SQLException sqle)
             {
@@ -647,13 +676,12 @@ public class DOIIdentifierProvider
     public void deleteOnline(Context context, String identifier) 
             throws DOIIdentifierException
     {
-        String doi = DOI.formatIdentifier(identifier);
-        TableRow doiRow = null;
+        String doi = doiService.formatIdentifier(identifier);
+        DOI doiRow = null;
         
         try 
         {
-            doiRow = DatabaseManager.findByUnique(context, "Doi", "doi",
-                                            doi.substring(DOI.SCHEME.length()));
+            doiRow = doiService.findByDoi(context, doi.substring(DOI.SCHEME.length()));
         } 
         catch (SQLException sqle) 
         {
@@ -665,21 +693,20 @@ public class DOIIdentifierProvider
                     + " isn't in our database",
                     DOIIdentifierException.DOI_DOES_NOT_EXIST);
         }
-        if (TO_BE_DELETED != doiRow.getIntColumn("status")) 
+        if (!TO_BE_DELETED.equals(doiRow.getStatus()))
         {
             log.error("This identifier: {} couldn't be deleted. "
                     + "Delete it first from metadata.", 
-                    DOI.SCHEME + doiRow.getStringColumn("doi"));
+                    DOI.SCHEME + doiRow.getDoi());
             throw new IllegalArgumentException("Couldn't delete this identifier:"
-                                             + DOI.SCHEME + doiRow.getStringColumn("doi")
+                                             + DOI.SCHEME + doiRow.getDoi()
                                              + ". Delete it first from metadata.");
         }
             connector.deleteDOI(context, doi);
             
-            doiRow.setColumn("status", DELETED);
+            doiRow.setStatus(DELETED);
             try {
-                DatabaseManager.update(context, doiRow);
-                context.commit();
+                doiService.update(context, doiRow);
             }
             catch (SQLException sqle)
             {
@@ -690,28 +717,27 @@ public class DOIIdentifierProvider
      
     /**
      * Returns a DSpaceObject depending on its DOI.
-     * @param context the context
+     * @param context
+     *     The relevant DSpace Context.
      * @param identifier The DOI in a format that is accepted by
-     *                   {@link formatIdentifier(String)}.
+     *     {@link org.dspace.identifier.service.DOIService#formatIdentifier(String)}.
      * @return Null if the DOI couldn't be found or the associated DSpaceObject.
-     * @throws SQLException
-     * @throws IdentifierException If {@code identifier} is null or an empty string.
+     * @throws SQLException if database error
+     * @throws DOIIdentifierException If {@code identifier} is null or an empty string.
      * @throws IllegalArgumentException If the identifier couldn't be recognized as DOI.
      */
-    public static DSpaceObject getObjectByDOI(Context context, String identifier)
+    public DSpaceObject getObjectByDOI(Context context, String identifier)
             throws SQLException, DOIIdentifierException, IllegalArgumentException
     {
-        String doi = DOI.formatIdentifier(identifier);
-        TableRow doiRow = DatabaseManager.findByUnique(context, "Doi", "doi",
-                doi.substring(DOI.SCHEME.length()));
+        String doi = doiService.formatIdentifier(identifier);
+        DOI doiRow = doiService.findByDoi(context, doi.substring(DOI.SCHEME.length()));
         
         if (null == doiRow)
         {
             return null;
         }
         
-        if (doiRow.isColumnNull("resource_type_id") ||
-                doiRow.isColumnNull("resource_id"))
+        if (doiRow.getDSpaceObject() == null)
         {
             log.error("Found DOI " + doi +
                     " in database, but no assigned Object could be found.");
@@ -719,44 +745,42 @@ public class DOIIdentifierProvider
                     " in database, but no assigned Object could be found.");
         }
         
-        return DSpaceObject.find(context,
-                doiRow.getIntColumn("resource_type_id"),
-                doiRow.getIntColumn("resource_id"));
+        return doiRow.getDSpaceObject();
     }
     
     /**
      * Search the database for a DOI, using the type and id of an DSpaceObject.
      *
      * @param context
-     * @param dso DSpaceObject to find doi for. DOIs with status TO_BE_DELETED will be
-     * ignored.
+     *     The relevant DSpace Context.
+     * @param dso
+     *     DSpaceObject to find doi for. DOIs with status TO_BE_DELETED will be
+     *     ignored.
      * @return The DOI as String or null if DOI was not found.
-     * @throws SQLException
+     * @throws SQLException if database error
      */
-    public static String getDOIByObject(Context context, DSpaceObject dso)
+    public String getDOIByObject(Context context, DSpaceObject dso)
             throws SQLException
     {
-        String sql = "SELECT * FROM Doi WHERE resource_type_id = ? " +
-                "AND resource_id = ? AND ((status != ? AND status != ?) OR status IS NULL)";
+//        String sql = "SELECT * FROM Doi WHERE resource_type_id = ? " +
+//                "AND resource_id = ? AND ((status != ? AND status != ?) OR status IS NULL)";
 
-        TableRow doiRow = DatabaseManager.querySingleTable(context, "Doi", sql,
-                dso.getType(), dso.getID(), DOIIdentifierProvider.TO_BE_DELETED,
-                DOIIdentifierProvider.DELETED);
+        DOI doiRow = doiService.findDOIByDSpaceObject(context, dso, Arrays.asList(DELETED, TO_BE_DELETED));
         if (null == doiRow)
         {
             return null;
         }
 
-        if (doiRow.isColumnNull("doi"))
+        if (doiRow.getDoi() == null)
         {
             log.error("A DOI with an empty doi column was found in the database. DSO-Type: "
-                    + dso.getTypeText() + ", ID: " + dso.getID() + ".");
+                    + contentServiceFactory.getDSpaceObjectService(dso).getTypeText(dso) + ", ID: " + dso.getID() + ".");
             throw new IllegalStateException("A DOI with an empty doi column " +
-                    "was found in the database. DSO-Type: " + dso.getTypeText() + 
+                    "was found in the database. DSO-Type: " + contentServiceFactory.getDSpaceObjectService(dso).getTypeText(dso) + 
                     ", ID: " + dso.getID() + ".");
         }
         
-        return DOI.SCHEME + doiRow.getStringColumn("doi");
+        return DOI.SCHEME + doiRow.getDoi();
     }
     
     /**
@@ -766,93 +790,122 @@ public class DOIIdentifierProvider
      * DOI is in a decent format, use DOI.formatIdentifier(String) if necessary.
      * 
      * @param context
+     *     The relevant DSpace Context.
      * @param dso The DSpaceObject the DOI should be loaded or created for.
-     * @param doi A DOI or null if a DOI should be generated. The generated DOI
+     * @param doiIdentifier A DOI or null if a DOI should be generated. The generated DOI
      * can be found in the appropriate column for the TableRow.
      * @return The database row of the object.
      * @throws SQLException In case of an error using the database.
      * @throws DOIIdentifierException If {@code doi} is not part of our prefix or
      *                             DOI is registered for another object already.
      */
-    protected TableRow loadOrCreateDOI(Context context, DSpaceObject dso, String doi)
+    protected DOI loadOrCreateDOI(Context context, DSpaceObject dso, String doiIdentifier)
             throws SQLException, DOIIdentifierException
     {
-        TableRow doiRow = null;
-        if (null != doi)
+        DOI doi = null;
+        if (null != doiIdentifier)
         {
             // we expect DOIs to have the DOI-Scheme except inside the doi table:
-            doi = doi.substring(DOI.SCHEME.length());
+            doiIdentifier = doiIdentifier.substring(DOI.SCHEME.length());
             
             // check if DOI is already in Database
-            doiRow = DatabaseManager.findByUnique(context, "Doi", "doi", doi);
-            if (null != doiRow)
+            doi = doiService.findByDoi(context, doiIdentifier);
+            if (null != doi)
             {
-                // check if DOI already belongs to dso
-                if (doiRow.getIntColumn("resource_id") == dso.getID() &&
-                        doiRow.getIntColumn("resource_type_id") == dso.getType())
+                if (doi.getDSpaceObject() == null)
                 {
-                    return doiRow;
-                }
-                else
-                {
-                    throw new DOIIdentifierException("Trying to create a DOI " +
-                            "that is already reserved for another object.",
-                            DOIIdentifierException.DOI_ALREADY_EXISTS);
+                    // doi was deleted, check resource type
+                    if (doi.getResourceTypeId() != null
+                            && doi.getResourceTypeId() != dso.getType())
+                    {
+                        // doi was assigend to another resource type. Don't
+                        // reactivate it
+                        throw new DOIIdentifierException("Cannot reassing "
+                                + "previously deleted DOI " + doiIdentifier 
+                                + " as the resource types of the object it was "
+                                + "previously assigned to and the object it "
+                                + "shall be assigned to now divert (was: "
+                                + Constants.typeText[doi.getResourceTypeId()]
+                                + ", trying to assign to "
+                                + Constants.typeText[dso.getType()] + ").", 
+                                DOIIdentifierException.DOI_IS_DELETED);
+                    } else {
+                        // reassign doi
+                        // nothing to do here, doi will br reassigned after this
+                        // if-else-if-else-...-block
+                    }
+                } else {
+                    // doi is assigned to a DSO; is it assigned to our specific dso?
+                    // check if DOI already belongs to dso
+                    if (dso.getID().equals(doi.getDSpaceObject().getID()))
+                    {
+                        return doi;
+                    }
+                    else
+                    {
+                        throw new DOIIdentifierException("Trying to create a DOI " +
+                                "that is already reserved for another object.",
+                                DOIIdentifierException.DOI_ALREADY_EXISTS);
+                    }
                 }
             }
 
             // check prefix
-            if (!doi.startsWith(this.getPrefix() + "/"))
+            if (!doiIdentifier.startsWith(this.getPrefix() + "/"))
             {
                 throw new DOIIdentifierException("Trying to create a DOI " +
                         "that's not part of our Namespace!",
                         DOIIdentifierException.FOREIGN_DOI);
             }
-            // prepare new doiRow
-            doiRow = DatabaseManager.create(context, "Doi");
+            if (doi == null)
+            {
+                // prepare new doiRow
+                doi = doiService.create(context);
+            }
         }
         else
         {
             // We need to generate a new DOI.
-            doiRow = DatabaseManager.create(context, "Doi");
-
-            doi = this.getPrefix() + "/" + this.getNamespaceSeparator() + 
-                    doiRow.getIntColumn("doi_id");
+            doi = doiService.create(context);
+            doiIdentifier = this.getPrefix() + "/" + this.getNamespaceSeparator() + 
+                    doi.getID();
         }
-                    
-        doiRow.setColumn("doi", doi);
-        doiRow.setColumn("resource_type_id", dso.getType());
-        doiRow.setColumn("resource_id", dso.getID());
-        doiRow.setColumnNull("status");
-        if (0 == DatabaseManager.update(context, doiRow))
-        {
+
+        // prepare new doiRow
+        doi.setDoi(doiIdentifier);
+        doi.setDSpaceObject(dso);
+        doi.setStatus(null);
+        try {
+            doiService.update(context, doi);
+        } catch (SQLException e) {
             throw new RuntimeException("Cannot save DOI to databse for unkown reason.");
         }
-        
-        return doiRow;
+
+        return doi;
     }
     
     /**
      * Loads a DOI out of the metadata of an DSpaceObject.
      * @param dso
+     *     DSpace object to get DOI metadata from
      * @return The DOI or null if no DOI was found.
+     * @throws DOIIdentifierException if identifier error
      */
-    public static String getDOIOutOfObject(DSpaceObject dso)
+    public String getDOIOutOfObject(DSpaceObject dso)
             throws DOIIdentifierException {
         // FIXME
         if (!(dso instanceof Item))
         {
             throw new IllegalArgumentException("We currently support DOIs for "
-                    + "Items only, not for " + dso.getTypeText() + ".");
+                    + "Items only, not for " + contentServiceFactory.getDSpaceObjectService(dso).getTypeText(dso) + ".");
         }
         Item item = (Item)dso;
 
-        Metadatum[] metadata = item.getMetadata(MD_SCHEMA, DOI_ELEMENT, DOI_QUALIFIER, null);
-        for (Metadatum id : metadata)
+        List<MetadataValue> metadata = itemService.getMetadata(item, MD_SCHEMA, DOI_ELEMENT, DOI_QUALIFIER, null);
+        for (MetadataValue id : metadata)
         {
-            if (id.value.startsWith(DOI.RESOLVER + "/10."))
-            {
-                return DOI.DOIFromExternalFormat(id.value);
+            if (id.getValue().startsWith(DOI.RESOLVER + String.valueOf(SLASH) + PREFIX + String.valueOf(SLASH) + NAMESPACE_SEPARATOR)) {
+                return doiService.DOIFromExternalFormat(id.getValue());
             }
         }
         return null;
@@ -862,10 +915,12 @@ public class DOIIdentifierProvider
      * Adds a DOI to the metadata of an item.
      * 
      * @param context
+     *     The relevant DSpace Context.
      * @param dso DSpaceObject the DOI should be added to.
      * @param doi The DOI that should be added as metadata.
-     * @throws SQLException
-     * @throws AuthorizeException 
+     * @throws SQLException if database error
+     * @throws AuthorizeException if authorization error
+     * @throws IdentifierException if identifier error
      */
     protected void saveDOIToObject(Context context, DSpaceObject dso, String doi)
             throws SQLException, AuthorizeException, IdentifierException
@@ -874,15 +929,14 @@ public class DOIIdentifierProvider
         if (!(dso instanceof Item))
         {
             throw new IllegalArgumentException("We currently support DOIs for "
-                    + "Items only, not for " + dso.getTypeText() + ".");
+                    + "Items only, not for " + contentServiceFactory.getDSpaceObjectService(dso).getTypeText(dso) + ".");
         }
         Item item = (Item) dso;
 
-        item.addMetadata(MD_SCHEMA, DOI_ELEMENT, DOI_QUALIFIER, null, DOI.DOIToExternalForm(doi));
+        itemService.addMetadata(context, item, MD_SCHEMA, DOI_ELEMENT, DOI_QUALIFIER, null, doiService.DOIToExternalForm(doi));
         try
         {
-            item.update();
-            context.commit();
+            itemService.update(context, item);
         } catch (SQLException ex) {
             throw ex;
         } catch (AuthorizeException ex) {
@@ -894,10 +948,12 @@ public class DOIIdentifierProvider
      * Removes a DOI out of the metadata of a DSpaceObject.
      * 
      * @param context
+     *     The relevant DSpace Context.
      * @param dso The DSpaceObject the DOI should be removed from.
      * @param doi The DOI to remove out of the metadata.
-     * @throws AuthorizeException
-     * @throws SQLException 
+     * @throws AuthorizeException if authorization error
+     * @throws SQLException if database error
+     * @throws IdentifierException if identifier error
      */
     protected void removeDOIFromObject(Context context, DSpaceObject dso, String doi)
             throws AuthorizeException, SQLException, IdentifierException
@@ -906,31 +962,24 @@ public class DOIIdentifierProvider
         if (!(dso instanceof Item))
         {
             throw new IllegalArgumentException("We currently support DOIs for "
-                    + "Items only, not for " + dso.getTypeText() + ".");
+                    + "Items only, not for " + contentServiceFactory.getDSpaceObjectService(dso).getTypeText(dso) + ".");
         }
         Item item = (Item)dso;
 
-        Metadatum[] metadata = item.getMetadata(MD_SCHEMA, DOI_ELEMENT, DOI_QUALIFIER, null);
+        List<MetadataValue> metadata = itemService.getMetadata(item, MD_SCHEMA, DOI_ELEMENT, DOI_QUALIFIER, null);
         List<String> remainder = new ArrayList<String>();
 
-        for (Metadatum id : metadata)
+        for (MetadataValue id : metadata)
         {
-            if (!id.value.equals(DOI.DOIToExternalForm(doi)))
+            if (!id.getValue().equals(doiService.DOIToExternalForm(doi)))
             {
-                remainder.add(id.value);
+                remainder.add(id.getValue());
             }
         }
 
-        item.clearMetadata(MD_SCHEMA, DOI_ELEMENT, DOI_QUALIFIER, null);
-        item.addMetadata(MD_SCHEMA, DOI_ELEMENT, DOI_QUALIFIER, null,
-                remainder.toArray(new String[remainder.size()]));
-        try {
-            item.update();
-            context.commit();
-        } catch (SQLException e) {
-            throw e;
-        } catch (AuthorizeException e) {
-            throw e;
-        }
+        itemService.clearMetadata(context, item, MD_SCHEMA, DOI_ELEMENT, DOI_QUALIFIER, null);
+        itemService.addMetadata(context, item, MD_SCHEMA, DOI_ELEMENT, DOI_QUALIFIER, null,
+                remainder);
+        itemService.update(context, item);
     }
 }

@@ -21,7 +21,13 @@ import javax.servlet.http.HttpServletResponse;
 
 import org.dspace.app.util.SubmissionInfo;
 import org.dspace.authorize.AuthorizeException;
+import org.dspace.authorize.factory.AuthorizeServiceFactory;
+import org.dspace.authorize.service.AuthorizeService;
+import org.dspace.content.factory.ContentServiceFactory;
+import org.dspace.content.service.*;
 import org.dspace.core.Context;
+import org.dspace.services.ConfigurationService;
+import org.dspace.services.factory.DSpaceServicesFactory;
 
 /**
  * Abstract processing class for DSpace Submission Steps. This defines the base
@@ -55,12 +61,12 @@ import org.dspace.core.Context;
 public abstract class AbstractProcessingStep
 {
     /***************************************************************************
-     * Constant - Name of the "<-Previous" button
+     * Constant - Name of the "&lt;-Previous" button
      **************************************************************************/
     public static final String PREVIOUS_BUTTON = "submit_prev";
 
     /***************************************************************************
-     * Constant - Name of the "Next->" button
+     * Constant - Name of the "Next-&gt;" button
      **************************************************************************/
     public static final String NEXT_BUTTON = "submit_next";
 
@@ -97,8 +103,15 @@ public abstract class AbstractProcessingStep
     private Map<Integer, String> errorMessages = null;
 
     private static final String ERROR_FIELDS_ATTRIBUTE = "dspace.submit.error_fields";
-    
 
+    protected AuthorizeService authorizeService = AuthorizeServiceFactory.getInstance().getAuthorizeService();
+    protected BitstreamService bitstreamService = ContentServiceFactory.getInstance().getBitstreamService();
+    protected BundleService bundleService = ContentServiceFactory.getInstance().getBundleService();
+    protected CollectionService collectionService = ContentServiceFactory.getInstance().getCollectionService();
+    protected ItemService itemService = ContentServiceFactory.getInstance().getItemService();
+    protected MetadataFieldService metadataFieldService = ContentServiceFactory.getInstance().getMetadataFieldService();
+    protected ConfigurationService configurationService = DSpaceServicesFactory.getInstance().getConfigurationService();
+    
     /**
      * Do any processing of the information input by the user, and/or perform
      * step processing (if no user interaction required)
@@ -111,16 +124,25 @@ public abstract class AbstractProcessingStep
      * it should perform *all* of its processing in this method!
      * 
      * @param context
-     *            current DSpace context
+     *     The relevant DSpace Context.
      * @param request
-     *            current servlet request object
+     *     Servlet's HTTP request object.
      * @param response
-     *            current servlet response object
+     *     Servlet's HTTP response object.
      * @param subInfo
-     *            submission info object
+     *     submission info object
      * @return Status or error flag which will be processed by
-     *         doPostProcessing() below! (if STATUS_COMPLETE or 0 is returned,
-     *         no errors occurred!)
+     *     doPostProcessing() below! (if STATUS_COMPLETE or 0 is returned,
+     *     no errors occurred!)
+     * @throws ServletException
+     *     A general exception a servlet can throw when it encounters difficulty.
+     * @throws IOException
+     *     A general class of exceptions produced by failed or interrupted I/O operations.
+     * @throws SQLException
+     *     An exception that provides information on a database access error or other errors.
+     * @throws AuthorizeException
+     *     Exception indicating the current user of the context does not have permission
+     *     to perform a particular action.
      */
     public abstract int doProcessing(Context context,
             HttpServletRequest request, HttpServletResponse response,
@@ -179,8 +201,10 @@ public abstract class AbstractProcessingStep
      * doProcessing() method, so that it can be accessed later by whatever UI is
      * generated.
      * 
+     * @param request
+     *     Servlet's HTTP request object.
      * @param fieldName
-     *            the name of the field which had an error
+     *     the name of the field which had an error
      */
     protected static final void addErrorField(HttpServletRequest request, String fieldName)
     {
@@ -204,7 +228,7 @@ public abstract class AbstractProcessingStep
      * processing.
      * 
      * @param request
-     *        current servlet request object
+     *     Servlet's HTTP request object.
      * 
      */
     protected static final void clearErrorFields(HttpServletRequest request)
@@ -276,7 +300,7 @@ public abstract class AbstractProcessingStep
      * This method may just return 1 for most steps (since most steps consist of
      * a single page). But, it should return a number greater than 1 for any
      * "step" which spans across a number of HTML pages. For example, the
-     * configurable "Describe" step (configured using input-forms.xml) overrides
+     * configurable "Describe" step (configured using submission-forms.xml) overrides
      * this method to return the number of pages that are defined by its
      * configuration file.
      * <P>
@@ -285,11 +309,13 @@ public abstract class AbstractProcessingStep
      * once!
      * 
      * @param request
-     *            The HTTP Request
+     *     Servlet's HTTP request object.
      * @param subInfo
-     *            The current submission information object
+     *     The current submission information object
      * 
      * @return the number of pages in this step
+     * @throws ServletException
+     *     A general exception a servlet can throw when it encounters difficulty.
      */
     public abstract int getNumberOfPages(HttpServletRequest request,
             SubmissionInfo subInfo) throws ServletException;
@@ -298,7 +324,7 @@ public abstract class AbstractProcessingStep
      * Find out which page a user is currently viewing
      * 
      * @param request
-     *            HTTP request
+     *     Servlet's HTTP request object.
      * 
      * @return current page
      */
@@ -350,9 +376,9 @@ public abstract class AbstractProcessingStep
      * Set which page a user is currently viewing
      * 
      * @param request
-     *            HTTP request
+     *     Servlet's HTTP request object.
      * @param pageNumber
-     *            new current page
+     *     new current page
      */
     public static final void setCurrentPage(HttpServletRequest request,
             int pageNumber)

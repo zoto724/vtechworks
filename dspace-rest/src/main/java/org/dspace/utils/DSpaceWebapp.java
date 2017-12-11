@@ -13,7 +13,11 @@ import org.dspace.app.util.AbstractDSpaceWebapp;
 /**
  * An MBean to identify this web application.
  *
+<<<<<<< HEAD
  * @author Bram Luyten <bram@atmire.com>
+=======
+ * @author Bram Luyten (bram at atmire dot com)
+>>>>>>> aaafc1887bc2e36d28f8d9c37ba8cac67a059689
  */
 public class DSpaceWebapp
         extends AbstractDSpaceWebapp

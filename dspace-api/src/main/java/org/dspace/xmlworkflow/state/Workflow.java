@@ -10,8 +10,9 @@ package org.dspace.xmlworkflow.state;
 import org.dspace.core.Context;
 import org.dspace.xmlworkflow.Role;
 import org.dspace.xmlworkflow.WorkflowConfigurationException;
-import org.dspace.xmlworkflow.WorkflowException;
-import org.dspace.xmlworkflow.WorkflowFactory;
+import org.dspace.workflow.WorkflowException;
+import org.dspace.xmlworkflow.factory.XmlWorkflowFactory;
+import org.dspace.xmlworkflow.factory.XmlWorkflowServiceFactory;
 import org.dspace.xmlworkflow.storedcomponents.XmlWorkflowItem;
 
 import java.io.IOException;
@@ -20,7 +21,7 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 
 /**
- * Class that contains all the steps & roles involved in a certain
+ * Class that contains all the steps and roles involved in a certain
  * configured workflow
  *
  * @author Bram De Schouwer (bram.deschouwer at dot com)
@@ -29,6 +30,8 @@ import java.util.LinkedHashMap;
  * @author Mark Diggory (markd at atmire dot com)
  */
 public class Workflow {
+
+    protected XmlWorkflowFactory xmlWorkflowFactory = XmlWorkflowServiceFactory.getInstance().getWorkflowFactory();
 
     private String id;
     private Step firstStep;
@@ -46,7 +49,7 @@ public class Workflow {
         return firstStep;
     }
 
-    public String getID(){
+    public String getID() {
         return id;
     }
 
@@ -54,11 +57,11 @@ public class Workflow {
      * Return a step with a given id
      */
     public Step getStep(String stepID) throws WorkflowConfigurationException, IOException {
-        if(steps.get(id)!=null){
+        if (steps.get(id)!=null) {
             return steps.get(id);
-        }else{
-            Step step = WorkflowFactory.createStep(this, stepID);
-            if(step== null){
+        } else {
+            Step step = xmlWorkflowFactory.createStep(this, stepID);
+            if (step== null){
                 throw new WorkflowConfigurationException("Step definition not found for: "+stepID);
             }
             steps.put(stepID, step);
@@ -68,11 +71,11 @@ public class Workflow {
 
     public Step getNextStep(Context context, XmlWorkflowItem wfi, Step currentStep, int outcome) throws IOException, WorkflowConfigurationException, WorkflowException, SQLException {
         String nextStepID = currentStep.getNextStepID(outcome);
-        if(nextStepID != null){
+        if (nextStepID != null) {
             Step nextStep = getStep(nextStepID);
-            if(nextStep == null)
+            if (nextStep == null)
                 throw new WorkflowException("Error while processing outcome, the following action was undefined: " + nextStepID);
-            if(nextStep.isValidStep(context, wfi)){
+            if (nextStep.isValidStep(context, wfi)) {
                 return nextStep;
             } else {
                 return getNextStep(context, wfi, nextStep, 0);

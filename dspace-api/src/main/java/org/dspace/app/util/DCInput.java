@@ -28,6 +28,15 @@ public class DCInput
 
     /** the DC namespace schema */
     private String dcSchema = null;
+    
+    /** the input language */
+    private boolean language = false;
+    
+    /** the language code use for the input */
+    private static final String LanguageName = "common_iso_languages";
+
+    /** the language list and their value */
+    private List<String> valueLanguageList = null;
 
     /** a label describing input */
     private String label = null;
@@ -65,6 +74,9 @@ public class DCInput
     /** is the entry closed to vocabulary terms? */
     private boolean closedVocabulary = false;
 
+    /** the regex to comply with, null if nothing */
+    private String regex = null;
+    
     /** allowed document types */
     private List<String> typeBind = null;
 
@@ -85,8 +97,10 @@ public class DCInput
      * a HashMap
      * 
      * @param fieldMap
-     *            ???
+     *     named field values.
+     *     
      * @param listMap
+     *     value-pairs map, computed from the forms definition XML file
      */
     public DCInput(Map<String, String> fieldMap, Map<String, List<String>> listMap)
     {
@@ -100,6 +114,14 @@ public class DCInput
             dcSchema = MetadataSchema.DC_SCHEMA;
         }
 
+        //check if the input have a language tag
+        language = Boolean.valueOf(fieldMap.get("language"));
+        valueLanguageList = new ArrayList();
+        if (language)
+        {
+            valueLanguageList = listMap.get(LanguageName);
+        }
+        
         String repStr = fieldMap.get("repeatable");
         repeatable = "true".equalsIgnoreCase(repStr)
                 || "yes".equalsIgnoreCase(repStr);
@@ -118,6 +140,7 @@ public class DCInput
         visibility = fieldMap.get("visibility");
         readOnly = fieldMap.get("readonly");
         vocabulary = fieldMap.get("vocabulary");
+        regex = fieldMap.get("regex");
         String closedVocabularyStr = fieldMap.get("closedVocabulary");
         closedVocabulary = "true".equalsIgnoreCase(closedVocabularyStr)
                             || "yes".equalsIgnoreCase(closedVocabularyStr);
@@ -255,6 +278,16 @@ public class DCInput
     {
         return dcQualifier;
     }
+    
+    /**
+     * Get the language for this form row.
+     * 
+     * @return the language state
+     */
+    public boolean getLanguage()
+    {
+        return language;
+    }
 
     /**
      * Get the hint for this form row, formatted for an HTML table
@@ -296,6 +329,17 @@ public class DCInput
         return valueList;
     }
 
+    /**
+     * Get the list of language tags 
+     * 
+     * @return the list of language
+     */
+
+    public List<String> getValueLanguageList() 
+    {
+        return valueLanguageList;
+    }
+    
     /**
      * Get the name of the controlled vocabulary that is associated with this
      * field
@@ -375,14 +419,14 @@ public class DCInput
 
 	/**
 	 * The closed attribute of the vocabulary tag for this field as set in 
-	 * input-forms.xml
+	 * submission-forms.xml
 	 * 
-	 * <code> 
+	 * {@code 
 	 * <field>
 	 *     .....
 	 *     <vocabulary closed="true">nsrc</vocabulary>
 	 * </field>
-	 * </code>
+	 * }
 	 * @return the closedVocabulary flags: true if the entry should be restricted 
 	 *         only to vocabulary terms, false otherwise
 	 */
@@ -400,6 +444,19 @@ public class DCInput
 			return true;
 		
 		return typeBind.contains(typeName);
+	}
+
+	public String getScope() {
+		return visibility;
+	}
+
+	public String getRegex() {
+		return regex;
+	}
+
+	public String getFieldName() {
+		return this.getSchema() +"."+ this.getElement() + "." + 
+        		this.getQualifier();
 	}
 	
 }

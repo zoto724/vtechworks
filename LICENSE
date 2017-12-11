@@ -1,7 +1,11 @@
 DSpace source code license:
 
 
+<<<<<<< HEAD
 Copyright (c) 2002-2017, DuraSpace.  All rights reserved.
+=======
+Copyright (c) 2002-2016, DuraSpace.  All rights reserved.
+>>>>>>> aaafc1887bc2e36d28f8d9c37ba8cac67a059689
 
 Redistribution and use in source and binary forms, with or without
 modification, are permitted provided that the following conditions are

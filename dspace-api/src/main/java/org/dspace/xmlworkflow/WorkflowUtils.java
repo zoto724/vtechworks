@@ -17,8 +17,13 @@ import org.dspace.core.I18nUtil;
 import org.apache.commons.lang.StringUtils;
 import org.apache.log4j.Logger;
 import org.dspace.eperson.Group;
+import org.dspace.eperson.factory.EPersonServiceFactory;
+import org.dspace.eperson.service.GroupService;
+import org.dspace.xmlworkflow.factory.XmlWorkflowFactory;
+import org.dspace.xmlworkflow.factory.XmlWorkflowServiceFactory;
 import org.dspace.xmlworkflow.state.Workflow;
 import org.dspace.xmlworkflow.storedcomponents.CollectionRole;
+import org.dspace.xmlworkflow.storedcomponents.service.CollectionRoleService;
 
 import javax.servlet.http.HttpServletRequest;
 
@@ -40,6 +45,9 @@ public class WorkflowUtils extends Util{
     /** log4j category */
     public static Logger log = Logger.getLogger(WorkflowUtils.class);
 
+    protected static final CollectionRoleService collectionRoleService = XmlWorkflowServiceFactory.getInstance().getCollectionRoleService();
+    protected static final GroupService groupService = EPersonServiceFactory.getInstance().getGroupService();
+    protected static final XmlWorkflowFactory xmlWorkflowFactory = XmlWorkflowServiceFactory.getInstance().getWorkflowFactory();
 
     /**
      * Return a string for logging, containing useful information about the
@@ -108,7 +116,7 @@ public class WorkflowUtils extends Util{
      * it can be called after a forward safely.
      *
      * @param request
-     *            the HTTP request
+     *     Servlet's HTTP request object.
      */
     public static void storeOriginalURL(HttpServletRequest request)
     {
@@ -198,40 +206,69 @@ public class WorkflowUtils extends Util{
      * WORKFLOW ROLE MANAGEMENT
      **************************************/
 
-    /*
+    /**
      * Creates a role for a collection by linking a group of epersons to a role ID
+     *
+     * @param context
+     *     The relevant DSpace Context.
+     * @param collection
+     *     the target collection
+     * @param roleId
+     *     the role to be linked.
+     * @param group
+     *     group of EPersons
+     * @throws AuthorizeException
+     *     Exception indicating the current user of the context does not have permission
+     *     to perform a particular action.
+     * @throws SQLException
+     *     An exception that provides information on a database access error or other errors.
      */
-    public static void createCollectionWorkflowRole(Context context, int collectionId, String roleId, Group group) throws AuthorizeException, SQLException {
-        CollectionRole ass = CollectionRole.create(context);
-        ass.setCollectionId(collectionId);
-        ass.setRoleId(roleId);
-        ass.setGroupId(group);
-        ass.update();
+    public static void createCollectionWorkflowRole(Context context, Collection collection, String roleId, Group group)
+        throws AuthorizeException, SQLException
+    {
+        CollectionRole ass = collectionRoleService.create(context, collection, roleId, group);
+        collectionRoleService.update(context, ass);
     }
+
     /*
      * Deletes a role group linked to a given role and a collection
+     *
+     * @param context
+     *     The relevant DSpace Context.
+     * @param collection
+     *     
+     * @param roleId
+     *     
+     * @throws SQLException
+     *     An exception that provides information on a database access error or other errors.
+     * @throws IOException
+     *     A general class of exceptions produced by failed or interrupted I/O operations.
+     * @throws WorkflowConfigurationException
+     *      occurs if there is a configuration error in the workflow
      */
-    public static void deleteRoleGroup(Context context, Collection collection, String roleID) throws SQLException, IOException, WorkflowConfigurationException {
-        Workflow workflow = WorkflowFactory.getWorkflow(collection);
+    public static void deleteRoleGroup(Context context, Collection collection, String roleID)
+        throws SQLException, IOException, WorkflowConfigurationException
+    {
+        Workflow workflow = xmlWorkflowFactory.getWorkflow(collection);
         Role role = workflow.getRoles().get(roleID);
-        if(role.getScope() == Role.Scope.COLLECTION){
-            CollectionRole ass = CollectionRole.find(context, collection.getID(), roleID);
-            ass.delete();
+        if (role.getScope() == Role.Scope.COLLECTION) {
+            CollectionRole ass = collectionRoleService.find(context, collection, roleID);
+            collectionRoleService.delete(context, ass);
         }
     }
 
 
-    public static HashMap<String, Role> getCollectionRoles(Collection thisCollection) throws IOException, WorkflowConfigurationException {
-        Workflow workflow = WorkflowFactory.getWorkflow(thisCollection);
+    public static HashMap<String, Role> getCollectionRoles(Collection thisCollection) throws IOException, WorkflowConfigurationException, SQLException {
+        Workflow workflow = xmlWorkflowFactory.getWorkflow(thisCollection);
         LinkedHashMap<String, Role> result = new LinkedHashMap<String, Role>();
-        if(workflow != null){
+        if (workflow != null) {
             //Make sure we find one
             HashMap<String, Role> allRoles = workflow.getRoles();
             //We have retrieved all our roles, not get the ones which can be configured by the collection
-            for(String roleId : allRoles.keySet()){
+            for (String roleId : allRoles.keySet()) {
                 Role role = allRoles.get(roleId);
                 // We just require the roles which have a scope of collection
-                if(role.getScope() == Role.Scope.COLLECTION && !role.isInternal()){
+                if (role.getScope() == Role.Scope.COLLECTION && !role.isInternal()) {
                     result.put(roleId, role);
                 }
             }
@@ -241,17 +278,17 @@ public class WorkflowUtils extends Util{
     }
 
 
-    public static HashMap<String, Role> getCollectionAndRepositoryRoles(Collection thisCollection) throws IOException, WorkflowConfigurationException {
-        Workflow workflow = WorkflowFactory.getWorkflow(thisCollection);
+    public static HashMap<String, Role> getCollectionAndRepositoryRoles(Collection thisCollection) throws IOException, WorkflowConfigurationException, SQLException {
+        Workflow workflow = xmlWorkflowFactory.getWorkflow(thisCollection);
         LinkedHashMap<String, Role> result = new LinkedHashMap<String, Role>();
-        if(workflow != null){
+        if (workflow != null) {
             //Make sure we find one
             HashMap<String, Role> allRoles = workflow.getRoles();
             //We have retrieved all our roles, not get the ones which can be configured by the collection
-            for(String roleId : allRoles.keySet()){
+            for (String roleId : allRoles.keySet()) {
                 Role role = allRoles.get(roleId);
                 // We just require the roles which have a scope of collection
-                if((role.getScope() == Role.Scope.COLLECTION || role.getScope() == Role.Scope.REPOSITORY) && !role.isInternal()){
+                if ((role.getScope() == Role.Scope.COLLECTION || role.getScope() == Role.Scope.REPOSITORY) && !role.isInternal()) {
                     result.put(roleId, role);
                 }
             }
@@ -261,17 +298,17 @@ public class WorkflowUtils extends Util{
     }
 
 
-    public static HashMap<String, Role> getAllExternalRoles(Collection thisCollection) throws IOException, WorkflowConfigurationException {
-        Workflow workflow = WorkflowFactory.getWorkflow(thisCollection);
+    public static HashMap<String, Role> getAllExternalRoles(Collection thisCollection) throws IOException, WorkflowConfigurationException, SQLException {
+        Workflow workflow = xmlWorkflowFactory.getWorkflow(thisCollection);
         LinkedHashMap<String, Role> result = new LinkedHashMap<String, Role>();
-        if(workflow != null){
+        if (workflow != null) {
             //Make sure we find one
             HashMap<String, Role> allRoles = workflow.getRoles();
             //We have retrieved all our roles, not get the ones which can be configured by the collection
-            for(String roleId : allRoles.keySet()){
+            for (String roleId : allRoles.keySet()) {
                 Role role = allRoles.get(roleId);
                 // We just require the roles which have a scope of collection
-                if(!role.isInternal()){
+                if (!role.isInternal()) {
                     result.put(roleId, role);
                 }
             }
@@ -280,27 +317,27 @@ public class WorkflowUtils extends Util{
         return result;
     }
 
-    public static Group getRoleGroup(Context context, int collectionId, Role role) throws SQLException {
-        if(role.getScope() == Role.Scope.REPOSITORY){
-            return Group.findByName(context, role.getName());
-        }else
-        if(role.getScope() == Role.Scope.COLLECTION){
-            CollectionRole collectionRole = CollectionRole.find(context, collectionId, role.getId());
-        if(collectionRole == null)
-            return null;
+    public static Group getRoleGroup(Context context, Collection collection, Role role) throws SQLException {
+        if (role.getScope() == Role.Scope.REPOSITORY) {
+            return groupService.findByName(context, role.getName());
+        } else
+            if (role.getScope() == Role.Scope.COLLECTION) {
+                CollectionRole collectionRole = collectionRoleService.find(context, collection, role.getId());
+                if (collectionRole == null)
+                    return null;
 
-            return collectionRole.getGroup();
-        }else
-        if(role.getScope() == Role.Scope.ITEM){
+                return collectionRole.getGroup();
+            } else
+            if (role.getScope() == Role.Scope.ITEM) {
 
-        }
+            }
         return null;
     }
 
 //    public static List<String> getAllUsedStepIdentifiers(Context context) throws SQLException {
 //        TableRowIterator tri = DatabaseManager.queryTable(context, "cwf_claimtask", "SELECT DISTINCT step_id FROM cwf_pooltask UNION SELECT DISTINCT step_id FROM cwf_claimtask");
 //        List<String> result = new ArrayList<String>();
-//        while(tri.hasNext()){
+//        while(tri.hasNext()) {
 //            TableRow row = tri.next();
 //            result.add(row.getStringColumn("step_id"));
 //        }

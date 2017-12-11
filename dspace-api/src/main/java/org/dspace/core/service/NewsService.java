@@ -7,6 +7,52 @@
  */
 package org.dspace.core.service;
 
+<<<<<<< HEAD
 public interface NewsService {
 	boolean validate(String newsName);
+=======
+/**
+ * Encapsulate access to the news texts.
+ *
+ * @author mhwood
+ */
+public interface NewsService {
+
+    /**
+     * Reads news from a text file.
+     *
+     * @param newsFile
+     *        name of the news file to read in, relative to the news file path.
+     * @return contents
+     */
+    public String readNewsFile(String newsFile);
+
+    /**
+     * Writes news to a text file.
+     *
+     * @param newsFile
+     *        name of the news file to read in, relative to the news file path.
+     * @param news
+     *            the text to be written to the file.
+     * @return string
+     */
+    public String writeNewsFile(String newsFile, String news);
+
+    /**
+     * Get the path for the news files.
+     *
+     * @return path
+     */
+    public String getNewsFilePath();
+
+    /**
+     * Check if the newsName is an acceptable file name
+     * 
+     * @param newsName
+     *     news name
+     * @return true 
+     *     if the newsName is valid
+     */
+    public boolean validate(String newsName);
+>>>>>>> aaafc1887bc2e36d28f8d9c37ba8cac67a059689
 }

@@ -42,9 +42,14 @@ public interface EmbargoSetter
      * @param item the item to embargo
      * @param terms value of the metadata field configured as embargo terms, if any.
      * @return absolute date on which the embargo is to be lifted, or null if none
+     * @throws SQLException
+     *     An exception that provides information on a database access error or other errors.
+     * @throws AuthorizeException
+     *     Exception indicating the current user of the context does not have permission
+     *     to perform a particular action.
      */
     public DCDate parseTerms(Context context, Item item, String terms)
-        throws SQLException, AuthorizeException, IOException;
+        throws SQLException, AuthorizeException;
 
     /**
      * Enforce embargo by (for example) turning off all read access to
@@ -52,9 +57,14 @@ public interface EmbargoSetter
      *
      * @param context the DSpace context
      * @param item the item to embargo
+     * @throws SQLException
+     *     An exception that provides information on a database access error or other errors.
+     * @throws AuthorizeException
+     *     Exception indicating the current user of the context does not have permission
+     *     to perform a particular action.
      */
     public void setEmbargo(Context context, Item item)
-        throws SQLException, AuthorizeException, IOException;
+        throws SQLException, AuthorizeException;
 
     /**
      * Check that embargo is properly set on Item.  For example: no read access
@@ -68,6 +78,13 @@ public interface EmbargoSetter
      *
      * @param context the DSpace context
      * @param item the item to embargo
+     * @throws IOException
+     *     A general class of exceptions produced by failed or interrupted I/O operations.
+     * @throws SQLException
+     *     An exception that provides information on a database access error or other errors.
+     * @throws AuthorizeException
+     *     Exception indicating the current user of the context does not have permission
+     *     to perform a particular action.
      */
     public void checkEmbargo(Context context, Item item)
         throws SQLException, AuthorizeException, IOException;

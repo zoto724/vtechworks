@@ -7,6 +7,7 @@
  */
 package org.dspace.content;
 
+<<<<<<< HEAD
 import java.io.IOException;
 import java.io.InputStream;
 import java.sql.SQLException;
@@ -43,6 +44,20 @@ import org.dspace.utils.DSpace;
 import org.dspace.versioning.VersioningService;
 import org.dspace.workflow.WorkflowItem;
 import org.dspace.xmlworkflow.storedcomponents.XmlWorkflowItem;
+=======
+import org.dspace.content.comparator.NameAscendingComparator;
+import org.dspace.content.factory.ContentServiceFactory;
+import org.dspace.content.service.ItemService;
+import org.dspace.core.Constants;
+import org.dspace.core.Context;
+import org.dspace.eperson.EPerson;
+import org.hibernate.annotations.Sort;
+import org.hibernate.annotations.SortType;
+import org.hibernate.proxy.HibernateProxyHelper;
+
+import javax.persistence.*;
+import java.util.*;
+>>>>>>> aaafc1887bc2e36d28f8d9c37ba8cac67a059689
 
 /**
  * Class representing an item in DSpace.
@@ -58,213 +73,32 @@ import org.dspace.xmlworkflow.storedcomponents.XmlWorkflowItem;
  * @author Martin Hald
  * @version $Revision$
  */
-public class Item extends DSpaceObject
+@Entity
+@Table(name="item")
+public class Item extends DSpaceObject implements DSpaceObjectLegacySupport
 {
     /**
      * Wild card for Dublin Core metadata qualifiers/languages
      */
     public static final String ANY = "*";
 
-    /** log4j category */
-    private static final Logger log = Logger.getLogger(Item.class);
+    @Column(name="item_id", insertable = false, updatable = false)
+    private Integer legacyId;
 
-    /** The table row corresponding to this item */
-    private final TableRow itemRow;
+    @Column(name= "in_archive")
+    private boolean inArchive = false;
 
-    /** The e-person who submitted this item */
-    private EPerson submitter;
+    @Column(name= "discoverable")
+    private boolean discoverable = false;
 
-    /** The bundles in this item - kept in sync with DB */
-    private List<Bundle> bundles;
+    @Column(name= "withdrawn")
+    private boolean withdrawn = false;
 
+    @Column(name= "last_modified", columnDefinition="timestamp with time zone")
+    @Temporal(TemporalType.TIMESTAMP)
+    private Date lastModified = new Date();
 
-    /** Handle, if any */
-    private String handle;
-
-    /**
-     * True if anything else was changed since last update()
-     * (to drive event mechanism)
-     */
-    private boolean modified;
-
-    /**
-     * Construct an item with the given table row
-     *
-     * @param context
-     *            the context this object exists in
-     * @param row
-     *            the corresponding row in the table
-     * @throws SQLException
-     */
-    Item(Context context, TableRow row) throws SQLException
-    {
-        super(context);
-
-        // Ensure that my TableRow is typed.
-        if (null == row.getTable())
-            row.setTable("item");
-
-        itemRow = row;
-        modified = false;
-        clearDetails();
-
-        // Get our Handle if any
-        handle = HandleManager.findHandle(context, this);
-
-        // Cache ourselves
-        context.cache(this, row.getIntColumn("item_id"));
-    }
-
-
-    /**
-     * Get an item from the database. The item, its Dublin Core metadata, and
-     * the bundle and bitstream metadata are all loaded into memory.
-     *
-     * @param context
-     *            DSpace context object
-     * @param id
-     *            Internal ID of the item
-     * @return the item, or null if the internal ID is invalid.
-     * @throws SQLException
-     */
-    public static Item find(Context context, int id) throws SQLException
-    {
-        // First check the cache
-        Item fromCache = (Item) context.fromCache(Item.class, id);
-
-        if (fromCache != null)
-        {
-            return fromCache;
-        }
-
-        TableRow row = DatabaseManager.find(context, "item", id);
-
-        if (row == null)
-        {
-            if (log.isDebugEnabled())
-            {
-                log.debug(LogManager.getHeader(context, "find_item",
-                        "not_found,item_id=" + id));
-            }
-
-            return null;
-        }
-
-        // not null, return item
-        if (log.isDebugEnabled())
-        {
-            log.debug(LogManager.getHeader(context, "find_item", "item_id="
-                    + id));
-        }
-
-        return new Item(context, row);
-    }
-
-    /**
-     * Create a new item, with a new internal ID. This method is not public,
-     * since items need to be created as workspace items. Authorisation is the
-     * responsibility of the caller.
-     *
-     * @param context
-     *            DSpace context object
-     * @return the newly created item
-     * @throws SQLException
-     * @throws AuthorizeException
-     */
-    static Item create(Context context) throws SQLException, AuthorizeException
-    {
-        TableRow row = DatabaseManager.create(context, "item");
-        Item i = new Item(context, row);
-
-        // set discoverable to true (default)
-        i.setDiscoverable(true);
-
-        // Call update to give the item a last modified date. OK this isn't
-        // amazingly efficient but creates don't happen that often.
-        context.turnOffAuthorisationSystem();
-        i.update();
-        context.restoreAuthSystemState();
-
-        context.addEvent(new Event(Event.CREATE, Constants.ITEM, i.getID(), 
-                null, i.getIdentifiers(context)));
-
-        log.info(LogManager.getHeader(context, "create_item", "item_id="
-                + row.getIntColumn("item_id")));
-
-        return i;
-    }
-
-    /**
-     * Get all the items in the archive. Only items with the "in archive" flag
-     * set are included. The order of the list is indeterminate.
-     *
-     * @param context
-     *            DSpace context object
-     * @return an iterator over the items in the archive.
-     * @throws SQLException
-     */
-    public static ItemIterator findAll(Context context) throws SQLException
-    {
-        String myQuery = "SELECT * FROM item WHERE in_archive='1'";
-
-        TableRowIterator rows = DatabaseManager.queryTable(context, "item", myQuery);
-
-        return new ItemIterator(context, rows);
-    }
-    
-    /**
-     * Get all "final" items in the archive, both archived ("in archive" flag) or
-     * withdrawn items are included. The order of the list is indeterminate.
-     *
-     * @param context
-     *            DSpace context object
-     * @return an iterator over the items in the archive.
-     * @throws SQLException
-     */
-	public static ItemIterator findAllUnfiltered(Context context) throws SQLException
-    {
-        String myQuery = "SELECT * FROM item WHERE in_archive='1' or withdrawn='1'";
-
-        TableRowIterator rows = DatabaseManager.queryTable(context, "item", myQuery);
-
-        return new ItemIterator(context, rows);
-	}
-
-    /**
-     * Find all the items in the archive by a given submitter. The order is
-     * indeterminate. Only items with the "in archive" flag set are included.
-     *
-     * @param context
-     *            DSpace context object
-     * @param eperson
-     *            the submitter
-     * @return an iterator over the items submitted by eperson
-     * @throws SQLException
-     */
-    public static ItemIterator findBySubmitter(Context context, EPerson eperson)
-            throws SQLException
-    {
-        String myQuery = "SELECT * FROM item WHERE in_archive='1' AND submitter_id="
-                + eperson.getID();
-
-        TableRowIterator rows = DatabaseManager.queryTable(context, "item", myQuery);
-
-        return new ItemIterator(context, rows);
-    }
-
-    public static ItemIterator findByMetadataFieldAuthority(Context context, String mdString, String authority) throws SQLException, AuthorizeException, IOException {
-        String[] elements = getElementsFilled(mdString);
-        String schema = elements[0], element = elements[1], qualifier = elements[2];
-        MetadataSchema mds = MetadataSchema.find(context, schema);
-        if (mds == null) {
-            throw new IllegalArgumentException("No such metadata schema: " + schema);
-        }
-        MetadataField mdf = MetadataField.findByElement(context, mds.getSchemaID(), element, qualifier);
-        if (mdf == null) {
-            throw new IllegalArgumentException(
-                    "No such metadata field: schema=" + schema + ", element=" + element + ", qualifier=" + qualifier);
-        }
-
+<<<<<<< HEAD
         String query = "SELECT item.* FROM metadatavalue,item WHERE item.in_archive='1' " +
                 "AND item.item_id = metadatavalue.resource_id AND metadatavalue.resource_type_id=2 AND metadata_field_id = ?";
         TableRowIterator rows = null;
@@ -276,84 +110,44 @@ public class Item extends DSpaceObject
         }
         return new ItemIterator(context, rows);
     }
+=======
+    @ManyToOne(fetch = FetchType.LAZY, cascade={CascadeType.PERSIST})
+    @JoinColumn(name = "owning_collection")
+    private Collection owningCollection;
+>>>>>>> aaafc1887bc2e36d28f8d9c37ba8cac67a059689
+
+    @OneToOne(fetch = FetchType.LAZY, mappedBy = "template")
+    private Collection templateItemOf;
+
+    /** The e-person who submitted this item */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "submitter_id")
+    private EPerson submitter = null;
 
 
-    /**
-     * Retrieve the list of Items submitted by eperson, ordered by recently submitted, optionally limitable
-     * @param context
-     * @param eperson
-     * @param limit a positive integer to limit, -1 or null for unlimited
-     * @return
-     * @throws SQLException
-     */
-    public static ItemIterator findBySubmitterDateSorted(Context context, EPerson eperson, Integer limit) throws SQLException
-    {
-        String querySorted =    "SELECT item.item_id, item.submitter_id, item.in_archive, item.withdrawn, " +
-                "item.owning_collection, item.last_modified, metadatavalue.text_value " +
-                "FROM item, metadatafieldregistry, metadatavalue " +
-                "WHERE metadatafieldregistry.metadata_field_id = metadatavalue.metadata_field_id AND " +
-                "  metadatavalue.resource_id = item.item_id AND " +
-                "  metadatavalue.resource_type_id = ? AND " +
-                "  metadatafieldregistry.element = 'date' AND " +
-                "  metadatafieldregistry.qualifier = 'accessioned' AND " +
-                "  item.submitter_id = ? AND ";
-        if(DatabaseManager.isOracle()) {
-            querySorted += " item.in_archive = 1 " +
-                    "ORDER BY cast(substr(metadatavalue.text_value,1,100) as varchar2(100)) desc";
-        } else {
-            querySorted += " item.in_archive = true " +
-                    "ORDER BY metadatavalue.text_value desc";
-        }
+    /** The bundles in this item - kept in sync with DB */
+    @ManyToMany(fetch = FetchType.LAZY, cascade={CascadeType.PERSIST})
+    @JoinTable(
+            name = "collection2item",
+            joinColumns = {@JoinColumn(name = "item_id") },
+            inverseJoinColumns = {@JoinColumn(name = "collection_id") }
+    )
+    private final Set<Collection> collections = new HashSet<>();
 
-        TableRowIterator rows;
+    @ManyToMany(fetch = FetchType.LAZY, mappedBy = "items")
+    private final List<Bundle> bundles = new ArrayList<>();
 
-        if(limit != null && limit > 0) {
-            if(DatabaseManager.isOracle()) {
-                //Oracle syntax for limit
-                // select * from ( SUBQUERY ) where ROWNUM <= 5;
-                querySorted = "SELECT * FROM (" + querySorted + ") WHERE ROWNUM <= ?";
-            } else {
-                querySorted += " limit ?";
-            }
-            rows = DatabaseManager.query(context, querySorted, Constants.ITEM, eperson.getID(), limit);
-        } else {
-            rows = DatabaseManager.query(context, querySorted, Constants.ITEM, eperson.getID());
-        }
-
-        return new ItemIterator(context, rows);
-
-    }
+    @Transient
+    private transient ItemService itemService;
 
     /**
-     * Get the internal ID of this item. In general, this shouldn't be exposed
-     * to users
+     * Protected constructor, create object using:
+     * {@link org.dspace.content.service.ItemService#create(Context, WorkspaceItem)}
      *
-     * @return the internal identifier
      */
-    public int getID()
+    protected Item()
     {
-        return itemRow.getIntColumn("item_id");
-    }
 
-
-
-
-
-
-    /**
-     * @see org.dspace.content.DSpaceObject#getHandle()
-     */
-    public String getHandle()
-    {
-        if(handle == null) {
-                try {
-                                handle = HandleManager.findHandle(this.ourContext, this);
-                        } catch (SQLException e) {
-                                // TODO Auto-generated catch block
-                                //e.printStackTrace();
-                        }
-        }
-        return handle;
     }
 
     /**
@@ -363,7 +157,7 @@ public class Item extends DSpaceObject
      */
     public boolean isArchived()
     {
-        return itemRow.getBooleanColumn("in_archive");
+        return inArchive;
     }
 
     /**
@@ -373,7 +167,16 @@ public class Item extends DSpaceObject
      */
     public boolean isWithdrawn()
     {
-        return itemRow.getBooleanColumn("withdrawn");
+        return withdrawn;
+    }
+
+
+    /**
+     * Set an item to be withdrawn, do NOT make this method public, use itemService().withdraw() to withdraw an item
+     * @param withdrawn
+     */
+    void setWithdrawn(boolean withdrawn) {
+        this.withdrawn = withdrawn;
     }
 
     /**
@@ -383,7 +186,7 @@ public class Item extends DSpaceObject
      */
     public boolean isDiscoverable()
     {
-        return itemRow.getBooleanColumn("discoverable");
+        return discoverable;
     }
 
     /**
@@ -395,30 +198,11 @@ public class Item extends DSpaceObject
      */
     public Date getLastModified()
     {
-        Date myDate = itemRow.getDateColumn("last_modified");
-
-        if (myDate == null)
-        {
-            myDate = new Date();
-        }
-
-        return myDate;
+        return lastModified;
     }
 
-    /**
-     * Method that updates the last modified date of the item
-     */
-    public void updateLastModified()
-    {
-        try {
-            Date lastModified = new Timestamp(new Date().getTime());
-            itemRow.setColumn("last_modified", lastModified);
-            DatabaseManager.updateQuery(ourContext, "UPDATE item SET last_modified = ? WHERE item_id= ? ", lastModified, getID());
-            //Also fire a modified event since the item HAS been modified
-            ourContext.addEvent(new Event(Event.MODIFY, Constants.ITEM, getID(), null, getIdentifiers(ourContext)));
-        } catch (SQLException e) {
-            log.error(LogManager.getHeader(ourContext, "Error while updating last modified timestamp", "Item: " + getID()));
-        }
+    public void setLastModified(Date lastModified) {
+        this.lastModified = lastModified;
     }
 
     /**
@@ -430,8 +214,8 @@ public class Item extends DSpaceObject
      */
     public void setArchived(boolean isArchived)
     {
-        itemRow.setColumn("in_archive", isArchived);
-        modified = true;
+        this.inArchive = isArchived;
+        setModified();
     }
 
     /**
@@ -442,8 +226,8 @@ public class Item extends DSpaceObject
      */
     public void setDiscoverable(boolean discoverable)
     {
-        itemRow.setColumn("discoverable", discoverable);
-        modified = true;
+        this.discoverable = discoverable;
+        setModified();
     }
 
     /**
@@ -454,32 +238,18 @@ public class Item extends DSpaceObject
      */
     public void setOwningCollection(Collection c)
     {
-        itemRow.setColumn("owning_collection", c.getID());
-        modified = true;
+        this.owningCollection = c;
+        setModified();
     }
 
     /**
      * Get the owning Collection for the item
      *
      * @return Collection that is the owner of the item
-     * @throws SQLException
      */
-    public Collection getOwningCollection() throws java.sql.SQLException
+    public Collection getOwningCollection()
     {
-        Collection myCollection = null;
-
-        // get the collection ID
-        int cid = itemRow.getIntColumn("owning_collection");
-
-        myCollection = Collection.find(ourContext, cid);
-
-        return myCollection;
-    }
-
-        // just get the collection ID for internal use
-    private int getOwningCollectionID()
-    {
-        return itemRow.getIntColumn("owning_collection");
+        return owningCollection;
     }
 
     /**
@@ -487,13 +257,8 @@ public class Item extends DSpaceObject
      *
      * @return the submitter
      */
-    public EPerson getSubmitter() throws SQLException
+    public EPerson getSubmitter()
     {
-        if (submitter == null && !itemRow.isColumnNull("submitter_id"))
-        {
-            submitter = EPerson.find(ourContext, itemRow
-                    .getIntColumn("submitter_id"));
-        }
         return submitter;
     }
 
@@ -508,141 +273,45 @@ public class Item extends DSpaceObject
      */
     public void setSubmitter(EPerson sub)
     {
-        submitter = sub;
-
-        if (submitter != null)
-        {
-            itemRow.setColumn("submitter_id", submitter.getID());
-        }
-        else
-        {
-            itemRow.setColumnNull("submitter_id");
-        }
-        modified = true;
+        this.submitter = sub;
+        setModified();
     }
 
     /**
-     * See whether this Item is contained by a given Collection.
-     * @param collection
-     * @return true if {@code collection} contains this Item.
-     * @throws SQLException
-     */
-    public boolean isIn(Collection collection) throws SQLException
-    {
-        TableRow tr = DatabaseManager.querySingle(ourContext,
-                "SELECT COUNT(*) AS count" +
-                " FROM collection2item" +
-                " WHERE collection_id = ? AND item_id = ?",
-                collection.getID(), itemRow.getIntColumn("item_id"));
-        return tr.getLongColumn("count") > 0;
-    }
-
-    /**
-     * Get the collections this item is in. The order is indeterminate.
+     * Get the collections this item is in. The order is sorted ascending by collection name.
      *
      * @return the collections this item is in, if any.
-     * @throws SQLException
      */
-    public Collection[] getCollections() throws SQLException
+    public List<Collection> getCollections()
     {
-        List<Collection> collections = new ArrayList<Collection>();
-
-        // Get collection table rows
-        TableRowIterator tri = DatabaseManager.queryTable(ourContext,"collection",
-                        "SELECT collection.* FROM collection, collection2item WHERE " +
-                        "collection2item.collection_id=collection.collection_id AND " +
-                        "collection2item.item_id= ? ",
-                        itemRow.getIntColumn("item_id"));
-
-        try
-        {
-            while (tri.hasNext())
-            {
-                TableRow row = tri.next();
-
-                // First check the cache
-                Collection fromCache = (Collection) ourContext.fromCache(
-                        Collection.class, row.getIntColumn("collection_id"));
-
-                if (fromCache != null)
-                {
-                    collections.add(fromCache);
-                }
-                else
-                {
-                    collections.add(new Collection(ourContext, row));
-                }
-            }
-        }
-        finally
-        {
-            // close the TableRowIterator to free up resources
-            if (tri != null)
-            {
-                tri.close();
-            }
-        }
-
-        Collection[] collectionArray = new Collection[collections.size()];
-        collectionArray = (Collection[]) collections.toArray(collectionArray);
-
-        return collectionArray;
+        // We return a copy because we do not want people to add elements to this collection directly.
+        // We return a list to maintain backwards compatibility
+        Collection[] output = collections.toArray(new Collection[]{});
+        Arrays.sort(output, new NameAscendingComparator());
+        return Arrays.asList(output);
     }
 
-    /**
-     * Get the communities this item is in. Returns an unordered array of the
-     * communities that house the collections this item is in, including parent
-     * communities of the owning collections.
-     *
-     * @return the communities this item is in.
-     * @throws SQLException
-     */
-    public Community[] getCommunities() throws SQLException
+    void addCollection(Collection collection)
     {
-        List<Community> communities = new ArrayList<Community>();
+        collections.add(collection);
+    }
 
-        // Get community table rows
-        TableRowIterator tri = DatabaseManager.queryTable(ourContext,"community",
-                        "SELECT community.* FROM community, community2item " +
-                        "WHERE community2item.community_id=community.community_id " +
-                        "AND community2item.item_id= ? ",
-                        itemRow.getIntColumn("item_id"));
+    void removeCollection(Collection collection)
+    {
+        collections.remove(collection);
+    }
 
-        try
-        {
-            while (tri.hasNext())
-            {
-                TableRow row = tri.next();
+    public void clearCollections(){
+        collections.clear();
+    }
 
-                // First check the cache
-                Community owner = (Community) ourContext.fromCache(Community.class,
-                        row.getIntColumn("community_id"));
+    public Collection getTemplateItemOf() {
+        return templateItemOf;
+    }
 
-                if (owner == null)
-                {
-                    owner = new Community(ourContext, row);
-                }
 
-                communities.add(owner);
-
-                // now add any parent communities
-                Community[] parents = owner.getAllParents();
-                communities.addAll(Arrays.asList(parents));
-            }
-        }
-        finally
-        {
-            // close the TableRowIterator to free up resources
-            if (tri != null)
-            {
-                tri.close();
-            }
-        }
-
-        Community[] communityArray = new Community[communities.size()];
-        communityArray = (Community[]) communities.toArray(communityArray);
-
-        return communityArray;
+    void setTemplateItemOf(Collection templateItemOf) {
+        this.templateItemOf = templateItemOf;
     }
 
     /**
@@ -650,330 +319,97 @@ public class Item extends DSpaceObject
      *
      * @return the bundles in an unordered array
      */
-    public Bundle[] getBundles() throws SQLException
+    public List<Bundle> getBundles()
     {
-        if (bundles == null)
-        {
-                bundles = new ArrayList<Bundle>();
-                // Get bundles
-                TableRowIterator tri = DatabaseManager.queryTable(ourContext, "bundle",
-                                        "SELECT bundle.* FROM bundle, item2bundle WHERE " +
-                                        "item2bundle.bundle_id=bundle.bundle_id AND " +
-                                        "item2bundle.item_id= ? ",
-                        itemRow.getIntColumn("item_id"));
-
-            try
-            {
-                while (tri.hasNext())
-                {
-                    TableRow r = tri.next();
-
-                    // First check the cache
-                    Bundle fromCache = (Bundle) ourContext.fromCache(Bundle.class,
-                                                r.getIntColumn("bundle_id"));
-
-                    if (fromCache != null)
-                    {
-                        bundles.add(fromCache);
-                    }
-                    else
-                    {
-                        bundles.add(new Bundle(ourContext, r));
-                    }
-                }
-            }
-            finally
-            {
-                // close the TableRowIterator to free up resources
-                if (tri != null)
-                {
-                    tri.close();
-                }
-            }
-        }
-        
-        Bundle[] bundleArray = new Bundle[bundles.size()];
-        bundleArray = (Bundle[]) bundles.toArray(bundleArray);
-
-        return bundleArray;
+        return bundles;
     }
 
     /**
-     * Get the bundles matching a bundle name (name corresponds roughly to type)
-     *
-     * @param name
-     *            name of bundle (ORIGINAL/TEXT/THUMBNAIL)
-     *
-     * @return the bundles in an unordered array
+     * Add a bundle to the item, should not be made public since we don't want to skip business logic
+     * @param bundle the bundle to be added
      */
-    public Bundle[] getBundles(String name) throws SQLException
+    void addBundle(Bundle bundle)
     {
-        List<Bundle> matchingBundles = new ArrayList<Bundle>();
-
-        // now only keep bundles with matching names
-        Bundle[] bunds = getBundles();
-        for (int i = 0; i < bunds.length; i++ )
-        {
-            if (name.equals(bunds[i].getName()))
-            {
-                matchingBundles.add(bunds[i]);
-            }
-        }
-
-        Bundle[] bundleArray = new Bundle[matchingBundles.size()];
-        bundleArray = (Bundle[]) matchingBundles.toArray(bundleArray);
-
-        return bundleArray;
+        bundles.add(bundle);
     }
 
     /**
-     * Create a bundle in this item, with immediate effect
-     *
-     * @param name
-     *            bundle name (ORIGINAL/TEXT/THUMBNAIL)
-     * @return the newly created bundle
-     * @throws SQLException
-     * @throws AuthorizeException
+     * Remove a bundle from item, should not be made public since we don't want to skip business logic
+     * @param bundle the bundle to be removed
      */
-    public Bundle createBundle(String name) throws SQLException,
-            AuthorizeException
+    void removeBundle(Bundle bundle)
     {
-        if ((name == null) || "".equals(name))
-        {
-            throw new SQLException("Bundle must be created with non-null name");
-        }
-
-        // Check authorisation
-        AuthorizeManager.authorizeAction(ourContext, this, Constants.ADD);
-
-        Bundle b = Bundle.create(ourContext);
-        b.setName(name);
-        b.update();
-
-        addBundle(b);
-
-        return b;
+        bundles.remove(bundle);
     }
 
     /**
-     * Add an existing bundle to this item. This has immediate effect.
+     * Return <code>true</code> if <code>other</code> is the same Item as
+     * this object, <code>false</code> otherwise
      *
-     * @param b
-     *            the bundle to add
-     * @throws SQLException
-     * @throws AuthorizeException
+     * @param obj
+     *            object to compare to
+     * @return <code>true</code> if object passed in represents the same item
+     *         as this object
      */
-    public void addBundle(Bundle b) throws SQLException, AuthorizeException
-    {
-        // Check authorisation
-        AuthorizeManager.authorizeAction(ourContext, this, Constants.ADD);
+     @Override
+     public boolean equals(Object obj)
+     {
+         if (obj == null)
+         {
+             return false;
+         }
+         Class<?> objClass = HibernateProxyHelper.getClassWithoutInitializingProxy(obj);
+         if (this.getClass() != objClass)
+         {
+             return false;
+         }
+         final Item otherItem = (Item) obj;
+         if (!this.getID().equals(otherItem.getID()))
+         {
+             return false;
+         }
 
-        log.info(LogManager.getHeader(ourContext, "add_bundle", "item_id="
-                + getID() + ",bundle_id=" + b.getID()));
+         return true;
+     }
 
-        // Check it's not already there
-        Bundle[] bunds = getBundles();
-        for (int i = 0; i < bunds.length; i++)
-        {
-            if (b.getID() == bunds[i].getID())
-            {
-                // Bundle is already there; no change
-                return;
-            }
-        }
-
-        // now add authorization policies from owning item
-        // hmm, not very "multiple-inclusion" friendly
-        AuthorizeManager.inheritPolicies(ourContext, this, b);
-
-        // Add the bundle to in-memory list
-        bundles.add(b);
-
-        // Insert the mapping
-        TableRow mappingRow = DatabaseManager.row("item2bundle");
-        mappingRow.setColumn("item_id", getID());
-        mappingRow.setColumn("bundle_id", b.getID());
-        DatabaseManager.insert(ourContext, mappingRow);
-
-        ourContext.addEvent(new Event(Event.ADD, Constants.ITEM, getID(), 
-                Constants.BUNDLE, b.getID(), b.getName(), 
-                getIdentifiers(ourContext)));
-    }
+     @Override
+     public int hashCode()
+     {
+         int hash = 5;
+         hash += 71 * hash + getType();
+         hash += 71 * hash + getID().hashCode();
+         return hash;
+     }
 
     /**
-     * Remove a bundle. This may result in the bundle being deleted, if the
-     * bundle is orphaned.
+     * return type found in Constants
      *
-     * @param b
-     *            the bundle to remove
-     * @throws SQLException
-     * @throws AuthorizeException
-     * @throws IOException
+     * @return int Constants.ITEM
      */
-    public void removeBundle(Bundle b) throws SQLException, AuthorizeException,
-            IOException
+    @Override
+    public int getType()
     {
-        // Check authorisation
-        AuthorizeManager.authorizeAction(ourContext, this, Constants.REMOVE);
-
-        log.info(LogManager.getHeader(ourContext, "remove_bundle", "item_id="
-                + getID() + ",bundle_id=" + b.getID()));
-
-        // Remove from internal list of bundles
-        Bundle[] bunds = getBundles();
-        
-        for (int i = 0; i < bunds.length; i++)
-        {
-            if (b.getID() == bunds[i].getID())
-            {
-                // We've found the bundle to remove
-                bundles.remove(bunds[i]);
-                break;
-            }
-        }
-
-        // Remove mapping from DB
-        DatabaseManager.updateQuery(ourContext,
-                "DELETE FROM item2bundle WHERE item_id= ? " +
-                "AND bundle_id= ? ",
-                getID(), b.getID());
-
-        ourContext.addEvent(new Event(Event.REMOVE, Constants.ITEM, getID(), 
-                Constants.BUNDLE, b.getID(), b.getName(), getIdentifiers(ourContext)));
-
-        // If the bundle is orphaned, it's removed
-        TableRowIterator tri = DatabaseManager.query(ourContext,
-                "SELECT * FROM item2bundle WHERE bundle_id= ? ",
-                b.getID());
-
-        try
-        {
-            if (!tri.hasNext())
-            {
-                //make the right to remove the bundle explicit because the implicit
-                // relation
-                //has been removed. This only has to concern the currentUser
-                // because
-                //he started the removal process and he will end it too.
-                //also add right to remove from the bundle to remove it's
-                // bitstreams.
-                AuthorizeManager.addPolicy(ourContext, b, Constants.DELETE,
-                        ourContext.getCurrentUser());
-                AuthorizeManager.addPolicy(ourContext, b, Constants.REMOVE,
-                        ourContext.getCurrentUser());
-
-                // The bundle is an orphan, delete it
-                b.delete();
-            }
-        }
-        finally
-        {
-            // close the TableRowIterator to free up resources
-            if (tri != null)
-            {
-                tri.close();
-            }
-        }
+        return Constants.ITEM;
     }
 
-    /**
-     * Create a single bitstream in a new bundle. Provided as a convenience
-     * method for the most common use.
-     *
-     * @param is
-     *            the stream to create the new bitstream from
-     * @param name
-     *            is the name of the bundle (ORIGINAL, TEXT, THUMBNAIL)
-     * @return Bitstream that is created
-     * @throws AuthorizeException
-     * @throws IOException
-     * @throws SQLException
-     */
-    public Bitstream createSingleBitstream(InputStream is, String name)
-            throws AuthorizeException, IOException, SQLException
+    @Override
+    public String getName()
     {
-        // Authorisation is checked by methods below
-        // Create a bundle
-        Bundle bnd = createBundle(name);
-        Bitstream bitstream = bnd.createBitstream(is);
-        addBundle(bnd);
-
-        // FIXME: Create permissions for new bundle + bitstream
-        return bitstream;
+        return getItemService().getMetadataFirstValue(this, MetadataSchema.DC_SCHEMA, "title", null, Item.ANY);
     }
 
-    /**
-     * Convenience method, calls createSingleBitstream() with name "ORIGINAL"
-     *
-     * @param is
-     *            InputStream
-     * @return created bitstream
-     * @throws AuthorizeException
-     * @throws IOException
-     * @throws SQLException
-     */
-    public Bitstream createSingleBitstream(InputStream is)
-            throws AuthorizeException, IOException, SQLException
-    {
-        return createSingleBitstream(is, "ORIGINAL");
+    @Override
+    public Integer getLegacyId() {
+        return legacyId;
     }
 
-    /**
-     * Get all non-internal bitstreams in the item. This is mainly used for
-     * auditing for provenance messages and adding format.* DC values. The order
-     * is indeterminate.
-     *
-     * @return non-internal bitstreams.
-     */
-    public Bitstream[] getNonInternalBitstreams() throws SQLException
+    public ItemService getItemService()
     {
-        List<Bitstream> bitstreamList = new ArrayList<Bitstream>();
-
-        // Go through the bundles and bitstreams picking out ones which aren't
-        // of internal formats
-        Bundle[] bunds = getBundles();
-
-        for (int i = 0; i < bunds.length; i++)
+        if(itemService == null)
         {
-            Bitstream[] bitstreams = bunds[i].getBitstreams();
-
-            for (int j = 0; j < bitstreams.length; j++)
-            {
-                if (!bitstreams[j].getFormat().isInternal())
-                {
-                    // Bitstream is not of an internal format
-                    bitstreamList.add(bitstreams[j]);
-                }
-            }
+            itemService = ContentServiceFactory.getInstance().getItemService();
         }
-
-        return bitstreamList.toArray(new Bitstream[bitstreamList.size()]);
-    }
-
-    /**
-     * Remove just the DSpace license from an item This is useful to update the
-     * current DSpace license, in case the user must accept the DSpace license
-     * again (either the item was rejected, or resumed after saving)
-     * <p>
-     * This method is used by the org.dspace.submit.step.LicenseStep class
-     *
-     * @throws SQLException
-     * @throws AuthorizeException
-     * @throws IOException
-     */
-    public void removeDSpaceLicense() throws SQLException, AuthorizeException,
-            IOException
-    {
-        // get all bundles with name "LICENSE" (these are the DSpace license
-        // bundles)
-        Bundle[] bunds = getBundles("LICENSE");
-
-        for (int i = 0; i < bunds.length; i++)
-        {
-            // FIXME: probably serious troubles with Authorizations
-            // fix by telling system not to check authorization?
-            removeBundle(bunds[i]);
-        }
+<<<<<<< HEAD
     }
 
     /**
@@ -2025,5 +1461,8 @@ public class Item extends DSpaceObject
         Choices c = ChoiceAuthorityManager.getManager().getBestMatch(fieldKey, values[i], getOwningCollectionID(), null);
         authorities[i] = c.values.length > 0 ? c.values[0].authority : null;
         confidences[i] = c.confidence;
+=======
+        return itemService;
+>>>>>>> aaafc1887bc2e36d28f8d9c37ba8cac67a059689
     }
 }

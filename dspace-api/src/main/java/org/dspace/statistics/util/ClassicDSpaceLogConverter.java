@@ -12,11 +12,10 @@ import org.apache.log4j.Logger;
 import org.dspace.app.statistics.LogAnalyser;
 import org.dspace.app.statistics.LogLine;
 import org.dspace.content.*;
-import org.dspace.handle.HandleManager;
 import org.dspace.core.Context;
+import org.dspace.handle.factory.HandleServiceFactory;
 
 import java.io.*;
-import java.sql.SQLException;
 import java.util.regex.Pattern;
 import java.util.regex.Matcher;
 import java.text.SimpleDateFormat;
@@ -189,7 +188,7 @@ public class ClassicDSpaceLogConverter {
                             ((!line.contains("org.dspace.usage.LoggerUsageEventListener")) || newEvents))
                     {
                         handle = lline.getParams().substring(7);
-                        dso = HandleManager.resolveToObject(context, handle);
+                        dso = HandleServiceFactory.getInstance().getHandleService().resolveToObject(context, handle);
                         id = "" + dso.getID();
                     }
                     else if ((lline.getAction().equals("view_collection")) &&
@@ -279,7 +278,7 @@ public class ClassicDSpaceLogConverter {
     /**
      * Main method to execute the converter
      *
-     * @param args CLI args
+     * @param args the command line arguments given
      */
     public static void main(String[] args)
     {
@@ -287,12 +286,18 @@ public class ClassicDSpaceLogConverter {
 
         Options options = new Options();
 
-        options.addOption("i", "in", true, "source file ('-' or omit for standard input)");
-        options.addOption("o", "out", true, "destination file or directory ('-' or omit for standard output)");
-        options.addOption("m", "multiple",false, "treat the input file as having a wildcard ending");
-        options.addOption("n", "newformat",false, "process new format log lines (1.6+)");
-        options.addOption("v", "verbose", false, "display verbose output (useful for debugging)");
-        options.addOption("h", "help", false, "help");
+        options.addOption("i", "in", true,
+            "source file ('-' or omit for standard input)");
+        options.addOption("o", "out", true,
+            "destination file or directory ('-' or omit for standard output)");
+        options.addOption("m", "multiple", false,
+            "treat the input file as having a wildcard ending");
+        options.addOption("n", "newformat", false,
+            "process new format log lines (1.6+)");
+        options.addOption("v", "verbose", false,
+            "display verbose output (useful for debugging)");
+        options.addOption("h", "help", false,
+            "help");
 
         // Parse the command line arguments
         CommandLine line;
@@ -317,21 +322,12 @@ public class ClassicDSpaceLogConverter {
         boolean newEvents = line.hasOption('n');
 
         // Create a copy of the converter
-        Context context = null;
-        try
-        {
-            context = new Context();
-            context.turnOffAuthorisationSystem();
-        }
-        catch (SQLException sqle)
-        {
-            System.err.println("Unable to create DSpace context: " + sqle.getMessage());
-            System.exit(1);
-        }
-
-        ClassicDSpaceLogConverter converter = new ClassicDSpaceLogConverter(context,
-                                                                            line.hasOption('v'),
-                                                                            newEvents);
+        Context context = new Context();
+        context.turnOffAuthorisationSystem();
+        ClassicDSpaceLogConverter converter = new ClassicDSpaceLogConverter(
+            context,
+            line.hasOption('v'),
+            newEvents);
 
         // Set up the log analyser
         try
@@ -364,18 +360,21 @@ public class ClassicDSpaceLogConverter {
                 System.err.println(sample + " could not be used to find a directory of log files.");
                 System.exit(1);
             }
-            else if (children.length <= 0)
+            else if (children.length <= 0) {
                 System.err.println(sample + " matched no files.");
+            }
             else
+            {
                 for (String in : children)
                 {
                     System.err.println(in);
                     String out = line.getOptionValue('o') +
-                                 (dir.getAbsolutePath() +
-                                  System.getProperty("file.separator") + in).substring(line.getOptionValue('i').length());
+                        (dir.getAbsolutePath() +
+                         System.getProperty("file.separator") + in).substring(line.getOptionValue('i').length());
 
                     converter.convert(dir.getAbsolutePath() + System.getProperty("file.separator") + in, out);
                 }
+            }
         }
         else
         {

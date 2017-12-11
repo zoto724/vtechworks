@@ -145,7 +145,7 @@ public class Constants
 
     /**
      * generating constants for the relevance array dynamically is simple: just
-     * 1 << TYPE
+     * {@code 1 << TYPE}
      */
     public static final int RBITSTREAM = 1 << BITSTREAM;
 
@@ -179,7 +179,10 @@ public class Constants
             RCOLLECTION, // 10 - DEFAULT_ITEM_READ
             RITEM | RCOLLECTION | RCOMMUNITY, // 11 - ADMIN
             RBITSTREAM | RBUNDLE | RITEM // 12 - WITHDRAWN_READ
+<<<<<<< HEAD
 
+=======
+>>>>>>> aaafc1887bc2e36d28f8d9c37ba8cac67a059689
     };
 
     public static final String DEFAULT_ENCODING = "UTF-8";

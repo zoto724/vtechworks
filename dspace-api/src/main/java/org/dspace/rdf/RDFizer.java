@@ -9,32 +9,30 @@
 package org.dspace.rdf;
 
 import com.hp.hpl.jena.rdf.model.Model;
-import java.io.PrintWriter;
-import java.sql.SQLException;
-import java.util.Set;
-import java.util.concurrent.CopyOnWriteArraySet;
-import org.apache.commons.cli.CommandLine;
-import org.apache.commons.cli.CommandLineParser;
-import org.apache.commons.cli.HelpFormatter;
-import org.apache.commons.cli.Option;
-import org.apache.commons.cli.OptionBuilder;
-import org.apache.commons.cli.Options;
-import org.apache.commons.cli.ParseException;
-import org.apache.commons.cli.PosixParser;
+import org.apache.commons.cli.*;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.log4j.Logger;
 import org.dspace.authorize.AuthorizeException;
-import org.dspace.content.Collection;
-import org.dspace.content.Community;
-import org.dspace.content.DSpaceObject;
-import org.dspace.content.Item;
-import org.dspace.content.ItemIterator;
-import org.dspace.content.Site;
+import org.dspace.content.*;
+import org.dspace.content.factory.ContentServiceFactory;
+import org.dspace.content.service.CommunityService;
+import org.dspace.content.service.ItemService;
 import org.dspace.core.Constants;
 import org.dspace.core.Context;
-import org.dspace.handle.HandleManager;
+import org.dspace.handle.factory.HandleServiceFactory;
+import org.dspace.handle.service.HandleService;
+import org.dspace.rdf.factory.RDFFactory;
+import org.dspace.rdf.storage.RDFStorage;
 import org.dspace.services.ConfigurationService;
-import org.dspace.utils.DSpace;
+import org.dspace.services.factory.DSpaceServicesFactory;
+
+import java.io.PrintWriter;
+import java.sql.SQLException;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Set;
+import java.util.UUID;
+import java.util.concurrent.CopyOnWriteArraySet;
 
 /**
  * This class manages the handling of RDF data in DSpace. It generates
@@ -47,31 +45,43 @@ public class RDFizer {
     
     private static final Logger log = Logger.getLogger(RDFizer.class);
     
-    protected ConfigurationService configurationService;
-    
     protected boolean stdout;
     protected boolean verbose;
     protected boolean dryrun;
     protected String lang;
     protected Context context;
+    
+    protected final ConfigurationService configurationService;
+    protected final ContentServiceFactory contentServiceFactory;
+    protected final CommunityService communityService;
+    protected final ItemService itemService;
+    protected final HandleService handleService;
+    protected final RDFStorage storage;
+
 
     /**
      * Set to remember with DSpaceObject were converted or deleted from the 
      * triplestore already. This set is helpful when converting or deleting 
-     * multiple DSpaceObjects (g.e. Communities with all Subcommunities and
+     * multiple DSpaceObjects (e.g. Communities with all Subcommunities and
      * Items).
      */
-    protected Set<String> processed;
+    protected Set<UUID> processed;
 
-    public RDFizer() throws SQLException
+    public RDFizer()
     {
-        this.configurationService = new DSpace().getConfigurationService();
         this.stdout = false;
         this.verbose = false;
         this.dryrun = false;
         this.lang = "TURTLE";
-        this.processed = new CopyOnWriteArraySet<String>();
-        this.context = new Context(Context.READ_ONLY);
+        this.processed = new CopyOnWriteArraySet<UUID>();
+        this.context = new Context(Context.Mode.READ_ONLY);
+        
+        this.configurationService = DSpaceServicesFactory.getInstance().getConfigurationService();
+        this.contentServiceFactory = ContentServiceFactory.getInstance();
+        this.communityService = contentServiceFactory.getCommunityService();
+        this.itemService = contentServiceFactory.getItemService();
+        this.handleService = HandleServiceFactory.getInstance().getHandleService();
+        this.storage = RDFFactory.getInstance().getRDFStorage();
     }
     
     /**
@@ -89,6 +99,7 @@ public class RDFizer {
      * </p>
      * 
      * @param context 
+     *     The relevant DSpace Context.
      */
     protected void overrideContext(Context context)
     {
@@ -98,7 +109,8 @@ public class RDFizer {
     /**
      * Returns whether all converted data is printed to stdout. Turtle will be
      * used as serialization.
-     * @return 
+     *
+     * @return {@code true} if print all generated data is to be printed to stdout
      */
     public boolean isStdout() {
         return stdout;
@@ -108,7 +120,9 @@ public class RDFizer {
      * Set this to true to print all generated data to stdout. The data will be
      * stored as well, unless {@code dryrun} is set true. Turtle will be used
      * as serialization.
+     *
      * @param stdout 
+     *     if {@code true}, print all data to standard output
      */
     public void setStdout(boolean stdout) {
         this.stdout = stdout;
@@ -117,7 +131,8 @@ public class RDFizer {
     /**
      * Returns whether verbose information is printed to System.err. Probably 
      * this is helpful for CLI only.
-     * @return 
+     *
+     * @return {@code true} if verbose mode is on
      */
     public boolean isVerbose() {
         return verbose;
@@ -126,7 +141,9 @@ public class RDFizer {
     /**
      * Set this to true to print verbose information to System.err. Probably 
      * this is helpful for CLI only.
+     *
      * @param verbose 
+     *     print verbose information to stderr
      */
     public void setVerbose(boolean verbose) {
         this.verbose = verbose;
@@ -134,7 +151,8 @@ public class RDFizer {
 
     /**
      * Returns whether this is a dry run. Probably this is helpful for CLI only.
-     * @return 
+     *
+     * @return {@code true} if dry-run mode is on
      */
     public boolean isDryrun() {
         return dryrun;
@@ -143,7 +161,9 @@ public class RDFizer {
     /**
      * Set this true to prevent any changes on the triple store. Probably this 
      * is helpful for CLI usage only.
+     *
      * @param dryrun 
+     *     test run without any changes to the triple store
      */
     public void setDryrun(boolean dryrun) {
         this.dryrun = dryrun;
@@ -156,7 +176,9 @@ public class RDFizer {
     public void deleteAll()
     {
         report("Sending delete command to the triple store.");
-        if (!this.dryrun) RDFConfiguration.getRDFStorage().deleteAll();
+        if (!this.dryrun) {
+            storage.deleteAll();
+        }
         report("Deleted all data from the triplestore.");
     }
     
@@ -164,17 +186,24 @@ public class RDFizer {
      * Delete the data about the DSpaceObject from the triplestore.
      * All data about descendent Subcommunities, Collections and Items will be 
      * deleted as well.
+     *
+     * @param dso
+     *     DSpace object
+     * @param reset
+     *      reset processed status (converted or deleted from the triplestore)
+     * @throws SQLException
+     *     An exception that provides information on a database access error or other errors.
      */
     public void delete(DSpaceObject dso, boolean reset)
-            throws SQLException
+    throws SQLException
     {
         if (dso.getType() != Constants.SITE
-                && dso.getType() != Constants.COMMUNITY
-                && dso.getType() != Constants.COLLECTION
-                && dso.getType() != Constants.ITEM)
+            && dso.getType() != Constants.COMMUNITY
+            && dso.getType() != Constants.COLLECTION
+            && dso.getType() != Constants.ITEM)
         {
-            throw new IllegalArgumentException(dso.getTypeText()
-                    + " is currently not supported as independent entity.");
+            throw new IllegalArgumentException(contentServiceFactory.getDSpaceObjectService(dso).getTypeText(dso)
+                + " is currently not supported as independent entity.");
         }
 
         if (dso.getType() == Constants.SITE)
@@ -185,26 +214,26 @@ public class RDFizer {
         Callback callback = new Callback() {
             @Override
             protected void callback(DSpaceObject dso)
-                    throws SQLException
+                throws SQLException
             {
                 String identifier = RDFUtil.generateIdentifier(context, dso);
                 
                 if (StringUtils.isEmpty(identifier))
                 {
                     System.err.println("Cannot determine RDF URI for " 
-                            + dso.getTypeText() + " " + dso.getID() + "(handle " 
-                            + dso.getHandle() + ")" + ", skipping. Please "
-                            + "delete it specifing the RDF URI.");
+                        + contentServiceFactory.getDSpaceObjectService(dso).getTypeText(dso) + " " + dso.getID() + "(handle " 
+                        + dso.getHandle() + ")" + ", skipping. Please "
+                        + "delete it specifying the RDF URI.");
                     log.error("Cannot detgermine RDF URI for " 
-                            + dso.getTypeText() + " " + dso.getID() + "(handle "
-                            + dso.getHandle() + ")" + ", skipping deletion.");
+                        + contentServiceFactory.getDSpaceObjectService(dso).getTypeText(dso) + " " + dso.getID() + "(handle "
+                        + dso.getHandle() + ")" + ", skipping deletion.");
                     return;
                 }
                 
                 report("Deleting Named Graph" + identifier);
                 if (!dryrun)
                 {
-                    RDFConfiguration.getRDFStorage().delete(identifier);
+                    storage.delete(identifier);
                 }
             }
         };
@@ -214,31 +243,34 @@ public class RDFizer {
     /**
      * Converts and stores all DSpaceObjects that are readable for an anonymous 
      * user.
+     *
+     * @throws SQLException
+     *     An exception that provides information on a database access error or other errors.
      */
     public void convertAll()
-            throws SQLException
+        throws SQLException
     {
         report("Starting conversion of all DSpaceItems, this may take a while...");
-        this.convert(new Site(), true);
+        this.convert(contentServiceFactory.getSiteService().findSite(context), true);
         report("Conversion ended.");
     }
     
     protected void convert(DSpaceObject dso, boolean reset)
-            throws SQLException
+    throws SQLException
     {
         if (dso.getType() != Constants.SITE
                 && dso.getType() != Constants.COMMUNITY
                 && dso.getType() != Constants.COLLECTION
                 && dso.getType() != Constants.ITEM)
         {
-            throw new IllegalArgumentException(dso.getTypeText()
+            throw new IllegalArgumentException(contentServiceFactory.getDSpaceObjectService(dso).getTypeText(dso)
                     + " is currently not supported as independent entity.");
         }
         
         Callback callback = new Callback() {
             @Override
             protected void callback(DSpaceObject dso)
-                    throws SQLException
+            throws SQLException
             {
                 Model converted = null;
                 try
@@ -268,13 +300,13 @@ public class RDFizer {
                             + "discoverable.");
                     return;
                 } catch (AuthorizeException ex) {
-                    report("Skipping conversion of " + dso.getTypeText() + " " 
+                    report("Skipping conversion of " + contentServiceFactory.getDSpaceObjectService(dso).getTypeText(dso) + " " 
                             + dso.getID() + " (handle " + dso.getHandle() + ")" 
                             + ", not authorized: " + ex.getMessage());
                     return;
                 } catch (RDFMissingIdentifierException ex) {
                     String errormessage = "Skipping conversion of " 
-                            + dso.getTypeText() + " " + dso.getID() 
+                            + contentServiceFactory.getDSpaceObjectService(dso).getTypeText(dso) + " " + dso.getID() 
                             + " (handle " + dso.getHandle() + ").";
                     log.error(errormessage, ex);
                     System.err.println(errormessage 
@@ -286,7 +318,7 @@ public class RDFizer {
                 if (stdout) {
                     if (converted == null)
                     {
-                        System.err.println("Conversion of " + dso.getTypeText() 
+                        System.err.println("Conversion of " + contentServiceFactory.getDSpaceObjectService(dso).getTypeText(dso) 
                                 + " " + dso.getID() + " resulted in no data.");
                     } else {
                         converted.write(System.out, lang);
@@ -300,14 +332,14 @@ public class RDFizer {
     }
     
     protected void dspaceDFS(DSpaceObject dso, Callback callback, boolean check, boolean reset)
-            throws SQLException
+    throws SQLException
     {
         if (dso.getType() != Constants.SITE
                 && dso.getType() != Constants.COMMUNITY
                 && dso.getType() != Constants.COLLECTION
                 && dso.getType() != Constants.ITEM)
         {
-            throw new IllegalArgumentException(dso.getTypeText()
+            throw new IllegalArgumentException(contentServiceFactory.getDSpaceObjectService(dso).getTypeText(dso)
                     + " is currently not supported as independent entity.");
         }
 
@@ -318,18 +350,18 @@ public class RDFizer {
         
         if (isProcessed(dso))
         {
-            log.debug("Skipping processing of " + dso.getTypeText() + " " 
+            log.debug("Skipping processing of " + contentServiceFactory.getDSpaceObjectService(dso).getTypeText(dso) + " " 
                     + dso.getID() + " (handle " + dso.getHandle() 
                     + "), already processed.");
             return;
         }
         markProcessed(dso);
         // this is useful to debug depth first search, but it is really noisy.
-        // log.debug("Procesing " + dso.getTypeText() + " " + dso.getID() + handle + ".");
+        //log.debug("Procesing " + contentServiceFactory.getDSpaceObjectService(dso).getTypeText(dso) + " " + dso.getID() + ":" + dso.getHandle() + ".");
         
         // if this method is used for conversion we should check if we have the
         // permissions to read a DSO before converting all of it decendents
-        // (g.e. check read permission on a community before converting all of
+        // (e.g. check read permission on a community before converting all of
         // its subcommunties and collections).
         // just skip items with missing permissions and report them.
         if (check)
@@ -356,7 +388,7 @@ public class RDFizer {
                         + "discoverable.");
                 return;
             } catch (AuthorizeException ex) {
-                report("Skipping processing of " + dso.getTypeText() + " " 
+                report("Skipping processing of " + contentServiceFactory.getDSpaceObjectService(dso).getTypeText(dso) + " " 
                         + dso.getID() + " (handle " + dso.getHandle() + ")" 
                         + ", not authorized: " + ex.getMessage());
                 return;
@@ -365,7 +397,7 @@ public class RDFizer {
 
         if (dso instanceof Site)
         {
-            Community[] communities = Community.findAllTop(context);
+            List<Community> communities = communityService.findAllTop(context);
             for (Community community : communities)
             {
                 this.dspaceDFS(community, callback, check, false);
@@ -375,12 +407,12 @@ public class RDFizer {
         
         if (dso instanceof Community)
         {
-            Community[] subcommunities = ((Community) dso).getSubcommunities();
+            List<Community> subcommunities = ((Community) dso).getSubcommunities();
             for (Community sub : subcommunities)
             {
                 this.dspaceDFS(sub, callback, check, false);
             }
-            Collection[] collections = ((Community) dso).getCollections();
+            List<Collection> collections = ((Community) dso).getCollections();
             for (Collection collection : collections)
             {
                 this.dspaceDFS(collection, callback, check, false);
@@ -389,18 +421,20 @@ public class RDFizer {
         
         if (dso instanceof Collection)
         {
-            ItemIterator items = ((Collection) dso).getAllItems();
+            Iterator<Item> items = itemService.findAllByCollection(context, (Collection) dso);
             while (items.hasNext())
             {
                 Item item = items.next();
                 this.dspaceDFS(item, callback, check, false);
-                item.decache();
             }
         }
 
-//        Currently Bundles and Bitsreams arn't supported as independent entities.
-//        The should be converted as part of an item. So we do not need to make
-//        the recursive call for them.
+//        Currently Bundles and Bitstreams aren't supported as independent entities.
+//        They should be converted as part of an item. So we do not need to make
+//        the recursive call for them. An item itself will be converted as part
+//        of the callback call below.
+//        The following code is left here for the day, we decide to also convert
+//        bundles and/or bitstreams.
 //        
 //        if (dso instanceof Item)
 //        {
@@ -421,22 +455,19 @@ public class RDFizer {
 //        }
         
         callback.callback(dso);
-        report("Processed " + dso.getTypeText() + " " + dso.getID() 
+        report("Processed " + contentServiceFactory.getDSpaceObjectService(dso).getTypeText(dso) + " " + dso.getID()
                 + " (handle " + dso.getHandle() + ").");
+        context.uncacheEntity(dso);
     }
     
     protected boolean isProcessed(DSpaceObject dso)
     {
-        String key = Integer.toString(dso.getType()) + "/" 
-                + Integer.toString(dso.getID());
-        return this.processed.contains(key);
+        return this.processed.contains(dso.getID());
     }
     
     protected void markProcessed(DSpaceObject dso)
     {
-        String key = Integer.toString(dso.getType()) + "/" 
-                + Integer.toString(dso.getID());
-        this.processed.add(key);
+        this.processed.add(dso.getID());
     }
     
     protected void report(String message)
@@ -479,7 +510,6 @@ public class RDFizer {
                 builder.append(argument);
             }
             String argumentsLine = builder.toString().trim();
-            argumentsLine.substring(0, argumentsLine.length() - 1);
             System.err.print("Cannot recognize the following argument");
             if (remainingArgs.length >= 2) System.err.print("s");
             System.err.println(": " + argumentsLine + ".");
@@ -554,7 +584,7 @@ public class RDFizer {
                 {
                     if (!this.dryrun)
                     {
-                        RDFConfiguration.getRDFStorage().delete(identifier);
+                        storage.delete(identifier);
                     }
                     if (this.verbose)
                     {
@@ -575,7 +605,7 @@ public class RDFizer {
                 }
                 
                 log.debug("Resolved identifier " + handle + " as " 
-                        + dso.getTypeText() + " " + dso.getID());
+                        + contentServiceFactory.getDSpaceObjectService(dso).getTypeText(dso) + " " + dso.getID());
                 
                 try
                 {
@@ -662,7 +692,7 @@ public class RDFizer {
         DSpaceObject dso = null;
         try
         {
-            dso = HandleManager.resolveToObject(this.context, handle);
+            dso = handleService.resolveToObject(this.context, handle);
         }
         catch (SQLException ex)
         {
@@ -693,7 +723,7 @@ public class RDFizer {
                 && dso.getType() != Constants.COLLECTION
                 && dso.getType() != Constants.ITEM)
         {
-            System.err.println(dso.getTypeText() + " are currently not "
+            System.err.println(contentServiceFactory.getDSpaceObjectService(dso).getTypeText(dso) + " are currently not "
                     + "supported as independent entities. Bundles and Bitstreams "
                     + "should be processed as part of their item.");
             return null;
@@ -779,31 +809,10 @@ public class RDFizer {
         // data into a triple store that provides a public sparql endpoint.
         // all exported rdf data can be read by anonymous users.
         // We won't change the database => read_only context will assure this.
-        Context context = null;
-        try {
-            context = new Context(Context.READ_ONLY);
-        }
-        catch (SQLException sqle)
-        {
-            log.info("Caught SQLException: ", sqle);
-            System.err.println("Can't connect to database: " + sqle.getMessage());
-            context.abort();
-            System.exit(-1);
-        }
-        
-        
+        Context context = new Context(Context.Mode.READ_ONLY);
+
         RDFizer myself = null;
-        try {
-            myself = new RDFizer();
-        } catch (SQLException ex) {
-            System.err.println("A problem with the database occurred: " 
-                    + ex.getMessage());
-            ex.printStackTrace(System.err);
-            log.error(ex);
-            context.abort();
-            System.exit(1);
-        }
-        
+        myself = new RDFizer();        
         myself.overrideContext(context);
         myself.runCLI(args);
         
@@ -814,6 +823,6 @@ public class RDFizer {
     protected abstract class Callback
     {
         protected abstract void callback(DSpaceObject dso)
-                throws SQLException;
+        throws SQLException;
     }
 }

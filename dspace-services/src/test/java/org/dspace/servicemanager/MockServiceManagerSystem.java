@@ -10,6 +10,8 @@ package org.dspace.servicemanager;
 import java.util.List;
 import java.util.Map;
 
+import org.springframework.context.ConfigurableApplicationContext;
+
 
 /**
  * This Mock allows us to pretend that a SMS is its own parent,
@@ -59,9 +61,13 @@ public class MockServiceManagerSystem implements ServiceManagerSystem {
         return this.sms.getServiceByName(name, type);
     }
 
+    public ConfigurableApplicationContext getApplicationContext() {
+        return sms.getApplicationContext();
+    }
+
     /* (non-Javadoc)
-     * @see org.dspace.kernel.ServiceManager#getServicesByType(java.lang.Class)
-     */
+         * @see org.dspace.kernel.ServiceManager#getServicesByType(java.lang.Class)
+         */
     public <T> List<T> getServicesByType(Class<T> type) {
         return this.sms.getServicesByType(type);
     }
@@ -83,7 +89,7 @@ public class MockServiceManagerSystem implements ServiceManagerSystem {
     /* (non-Javadoc)
      * @see org.dspace.kernel.ServiceManager#pushConfig(java.util.Map)
      */
-    public void pushConfig(Map<String, String> settings) {
+    public void pushConfig(Map<String, Object> settings) {
         this.sms.pushConfig(settings);
     }
 
@@ -92,6 +98,11 @@ public class MockServiceManagerSystem implements ServiceManagerSystem {
      */
     public void registerService(String name, Object service) {
         this.sms.registerService(name, service);
+    }
+
+    @Override
+    public void registerServiceNoAutowire(String name, Object service) {
+        this.sms.registerServiceNoAutowire(name, service);
     }
 
     /* (non-Javadoc)

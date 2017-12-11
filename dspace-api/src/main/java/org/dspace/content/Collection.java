@@ -7,34 +7,26 @@
  */
 package org.dspace.content;
 
-import org.apache.log4j.Logger;
-import org.dspace.app.util.AuthorizeUtil;
-import org.dspace.authorize.AuthorizeConfiguration;
-import org.dspace.authorize.AuthorizeException;
-import org.dspace.authorize.AuthorizeManager;
-import org.dspace.authorize.ResourcePolicy;
-import org.dspace.browse.BrowseException;
-import org.dspace.browse.IndexBrowse;
-import org.dspace.browse.ItemCountException;
-import org.dspace.browse.ItemCounter;
+import org.dspace.content.comparator.NameAscendingComparator;
+import org.dspace.content.factory.ContentServiceFactory;
+import org.dspace.content.service.CollectionService;
 import org.dspace.core.*;
 import org.dspace.eperson.Group;
-import org.dspace.event.Event;
-import org.dspace.handle.HandleManager;
-import org.dspace.storage.rdbms.DatabaseManager;
-import org.dspace.storage.rdbms.TableRow;
-import org.dspace.storage.rdbms.TableRowIterator;
-import org.dspace.workflow.WorkflowItem;
-import org.dspace.xmlworkflow.storedcomponents.CollectionRole;
-import org.dspace.xmlworkflow.storedcomponents.XmlWorkflowItem;
+import org.hibernate.annotations.CacheConcurrencyStrategy;
+import org.hibernate.proxy.HibernateProxyHelper;
 
+<<<<<<< HEAD
 import java.io.Serializable;
 import java.io.IOException;
 import java.io.InputStream;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
+=======
+import javax.persistence.*;
+>>>>>>> aaafc1887bc2e36d28f8d9c37ba8cac67a059689
 import java.sql.SQLException;
 import java.util.*;
+import org.dspace.authorize.AuthorizeException;
 
 /**
  * Class representing a collection.
@@ -49,251 +41,136 @@ import java.util.*;
  *
  * @author Robert Tansley
  */
-public class Collection extends DSpaceObject
+@Entity
+@Table(name="collection")
+@Cacheable
+@org.hibernate.annotations.Cache(usage = CacheConcurrencyStrategy.NONSTRICT_READ_WRITE, include = "non-lazy")
+public class Collection extends DSpaceObject implements DSpaceObjectLegacySupport
 {
-    /** log4j category */
-    private static final Logger log = Logger.getLogger(Collection.class);
 
-    /** The table row corresponding to this item */
-    private final TableRow collectionRow;
+    @Column(name="collection_id", insertable = false, updatable = false)
+    private Integer legacyId;
 
     /** The logo bitstream */
+    @OneToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "logo_bitstream_id")
     private Bitstream logo;
 
     /** The item template */
+    @OneToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "template_item_id")
     private Item template;
-
-    /** Our Handle */
-    private String handle;
-
-    /** Flag set when data is modified, for events */
-    private boolean modified;
 
     /**
      * Groups corresponding to workflow steps - NOTE these start from one, so
      * workflowGroups[0] corresponds to workflow_step_1.
      */
-    private final Group[] workflowGroup;
+    @OneToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "workflow_step_1")
+    private Group workflowStep1;
 
-    /** The default group of submitters */
+    @OneToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "workflow_step_2")
+    private Group workflowStep2;
+
+    @OneToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "workflow_step_3")
+    private Group workflowStep3;
+
+
+    @OneToOne
+    @JoinColumn(name = "submitter")
+    /** The default group of administrators */
     private Group submitters;
 
+    @OneToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "admin")
     /** The default group of administrators */
     private Group admins;
 
+    @ManyToMany(fetch = FetchType.LAZY, cascade = {CascadeType.PERSIST})
+    @JoinTable(
+            name = "community2collection",
+            joinColumns = {@JoinColumn(name = "collection_id") },
+            inverseJoinColumns = {@JoinColumn(name = "community_id") }
+    )
+    private Set<Community> communities = new HashSet<>();
+
+    @Transient
+    private transient CollectionService collectionService;
+
     // Keys for accessing Collection metadata
+    @Transient
     public static final String COPYRIGHT_TEXT = "copyright_text";
+    @Transient
     public static final String INTRODUCTORY_TEXT = "introductory_text";
+    @Transient
     public static final String SHORT_DESCRIPTION = "short_description";
+    @Transient
     public static final String SIDEBAR_TEXT = "side_bar_text";
+    @Transient
     public static final String PROVENANCE_TEXT = "provenance_description";
-    
+
     /**
-     * Construct a collection with the given table row
+     * Protected constructor, create object using:
+     * {@link org.dspace.content.service.CollectionService#create(Context, Community)}
+     * or
+     * {@link org.dspace.content.service.CollectionService#create(Context, Community, String)}
      *
-     * @param context
-     *            the context this object exists in
-     * @param row
-     *            the corresponding row in the table
-     * @throws SQLException
      */
-    Collection(Context context, TableRow row) throws SQLException
+    protected Collection()
     {
-        super(context);
 
-        // Ensure that my TableRow is typed.
-        if (null == row.getTable())
-            row.setTable("collection");
+    }
 
-        collectionRow = row;
-
-        // Get the logo bitstream
-        if (collectionRow.isColumnNull("logo_bitstream_id"))
-        {
-            logo = null;
-        }
-        else
-        {
-            logo = Bitstream.find(ourContext, collectionRow
-                    .getIntColumn("logo_bitstream_id"));
-        }
-
-        // Get the template item
-        if (collectionRow.isColumnNull("template_item_id"))
-        {
-            template = null;
-        }
-        else
-        {
-            template = Item.find(ourContext, collectionRow
-                    .getIntColumn("template_item_id"));
-        }
-
-        // Get the relevant groups
-        workflowGroup = new Group[3];
-
-        workflowGroup[0] = groupFromColumn("workflow_step_1");
-        workflowGroup[1] = groupFromColumn("workflow_step_2");
-        workflowGroup[2] = groupFromColumn("workflow_step_3");
-
-        submitters = groupFromColumn("submitter");
-        admins = groupFromColumn("admin");
-
-        // Get our Handle if any
-        handle = HandleManager.findHandle(context, this);
-
-        // Cache ourselves
-        context.cache(this, row.getIntColumn("collection_id"));
-
-        modified = false;
-        clearDetails();
+    @Override
+    public String getName()
+    {
+        String value = getCollectionService().getMetadataFirstValue(this, MetadataSchema.DC_SCHEMA, "title", null, Item.ANY);
+        return value == null ? "" : value;
     }
 
     /**
-     * Get a collection from the database. Loads in the metadata
+     * Get the logo for the collection. <code>null</code> is returned if the
+     * collection does not have a logo.
      *
-     * @param context
-     *            DSpace context object
-     * @param id
-     *            ID of the collection
-     *
-     * @return the collection, or null if the ID is invalid.
-     * @throws SQLException
+     * @return the logo of the collection, or <code>null</code>
      */
-    public static Collection find(Context context, int id) throws SQLException
+    public Bitstream getLogo()
     {
-        // First check the cache
-        Collection fromCache = (Collection) context.fromCache(Collection.class,
-                id);
+        return logo;
+    }
 
-        if (fromCache != null)
-        {
-            return fromCache;
-        }
+    protected void setLogo(Bitstream logo) {
+        this.logo = logo;
+        setModified();
+    }
 
-        TableRow row = DatabaseManager.find(context, "collection", id);
 
-        if (row == null)
-        {
-            if (log.isDebugEnabled())
-            {
-                log.debug(LogManager.getHeader(context, "find_collection",
-                        "not_found,collection_id=" + id));
-            }
-
-            return null;
-        }
-
-        // not null, return Collection
-        if (log.isDebugEnabled())
-        {
-            log.debug(LogManager.getHeader(context, "find_collection",
-                    "collection_id=" + id));
-        }
-
-        return new Collection(context, row);
+    /**
+     * Get the default group of submitters, if there is one. Note that the
+     * authorization system may allow others to submit to the collection, so
+     * this is not necessarily a definitive list of potential submitters.
+     * <P>
+     * The default group of submitters for collection 100 is the one called
+     * <code>collection_100_submit</code>.
+     *
+     * @return the default group of submitters, or <code>null</code> if there
+     *         is no default group.
+     */
+    public Group getSubmitters()
+    {
+        return submitters;
     }
 
     /**
-     * Create a new collection, with a new ID. This method is not public, and
-     * does not check authorisation.
+     * Set the default group of submitters
      *
-     * @param context
-     *            DSpace context object
+     * Package protected in order to preven unauthorized calls to this method
      *
-     * @return the newly created collection
-     * @throws SQLException
-     * @throws AuthorizeException
+     * @param submitters the group of submitters
      */
-    static Collection create(Context context) throws SQLException,
-            AuthorizeException
-    {
-        return create(context, null);
-    }
-
-    /**
-     * Create a new collection, with a new ID. This method is not public, and
-     * does not check authorisation.
-     *
-     * @param context
-     *            DSpace context object
-     *
-     * @param handle the pre-determined Handle to assign to the new community
-     * @return the newly created collection
-     * @throws SQLException
-     * @throws AuthorizeException
-     */
-    static Collection create(Context context, String handle) throws SQLException,
-            AuthorizeException
-    {
-        TableRow row = DatabaseManager.create(context, "collection");
-        Collection c = new Collection(context, row);
-
-        try
-        {
-            c.handle = (handle == null) ?
-                       HandleManager.createHandle(context, c) :
-                       HandleManager.createHandle(context, c, handle);
-        }
-        catch(IllegalStateException ie)
-        {
-            //If an IllegalStateException is thrown, then an existing object is already using this handle
-            //Remove the collection we just created -- as it is incomplete
-            try
-            {
-                if(c!=null)
-                {
-                    c.delete();
-                }
-            } catch(Exception e) { }
-
-            //pass exception on up the chain
-            throw ie;
-        }
-
-        // create the default authorization policy for collections
-        // of 'anonymous' READ
-        Group anonymousGroup = Group.find(context, 0);
-
-        ResourcePolicy myPolicy = ResourcePolicy.create(context);
-        myPolicy.setResource(c);
-        myPolicy.setAction(Constants.READ);
-        myPolicy.setGroup(anonymousGroup);
-        myPolicy.update();
-
-        // now create the default policies for submitted items
-        myPolicy = ResourcePolicy.create(context);
-        myPolicy.setResource(c);
-        myPolicy.setAction(Constants.DEFAULT_ITEM_READ);
-        myPolicy.setGroup(anonymousGroup);
-        myPolicy.update();
-
-        myPolicy = ResourcePolicy.create(context);
-        myPolicy.setResource(c);
-        myPolicy.setAction(Constants.DEFAULT_BITSTREAM_READ);
-        myPolicy.setGroup(anonymousGroup);
-        myPolicy.update();
-
-        context.addEvent(new Event(Event.CREATE, Constants.COLLECTION, 
-                c.getID(), c.handle, c.getIdentifiers(context)));
-
-        log.info(LogManager.getHeader(context, "create_collection",
-                "collection_id=" + row.getIntColumn("collection_id"))
-                + ",handle=" + c.handle);
-
-        return c;
-    }
-
-    /**
-     * Get all collections in the system. These are alphabetically sorted by
-     * collection name.
-     *
-     * @param context
-     *            DSpace context object
-     *
-     * @return the collections in the system
-     * @throws SQLException
-     */
+<<<<<<< HEAD
     public static Collection[] findAll(Context context) throws SQLException
     {
         TableRowIterator tri = null;
@@ -463,26 +340,31 @@ public class Collection extends DSpaceObject
 
         return collectionArray;
     }
-
-    /**
-     * Get the in_archive items in this collection. The order is indeterminate.
-     *
-     * @return an iterator over the items in the collection.
-     * @throws SQLException
-     */
-    public ItemIterator getItems() throws SQLException
-    {
-        String myQuery = "SELECT item.* FROM item, collection2item WHERE "
-                + "item.item_id=collection2item.item_id AND "
-                + "collection2item.collection_id= ? "
-                + "AND item.in_archive='1'";
-
-        TableRowIterator rows = DatabaseManager.queryTable(ourContext, "item",
-                myQuery,getID());
-
-        return new ItemIterator(ourContext, rows);
+=======
+    void setSubmitters(Group submitters) {
+        this.submitters = submitters;
+        setModified();
     }
 
+>>>>>>> aaafc1887bc2e36d28f8d9c37ba8cac67a059689
+
+    /**
+     * Get the default group of administrators, if there is one. Note that the
+     * authorization system may allow others to be administrators for the
+     * collection.
+     * <P>
+     * The default group of administrators for collection 100 is the one called
+     * <code>collection_100_admin</code>.
+     *
+     * @return group of administrators, or <code>null</code> if there is no
+     *         default group.
+     */
+    public Group getAdministrators()
+    {
+        return admins;
+    }
+
+<<<<<<< HEAD
     /**
      * Get the in_archive items in this collection. The order is indeterminate.
      * Provides the ability to use limit and offset, for efficient paging.
@@ -507,212 +389,119 @@ public class Collection extends DSpaceObject
 
         TableRowIterator rows = DatabaseManager.query(ourContext,
                 myQuery.toString(), params.toArray());
+=======
+    void setAdmins(Group admins) {
+        this.admins = admins;
+        setModified();
+    }
+>>>>>>> aaafc1887bc2e36d28f8d9c37ba8cac67a059689
 
-        return new ItemIterator(ourContext, rows);
+    public Group getWorkflowStep1() {
+        return workflowStep1;
+    }
+
+    public Group getWorkflowStep2() {
+        return workflowStep2;
+    }
+
+    public Group getWorkflowStep3() {
+        return workflowStep3;
+    }
+
+    void setWorkflowStep1(Group workflowStep1) {
+        this.workflowStep1 = workflowStep1;
+        setModified();
+    }
+
+    void setWorkflowStep2(Group workflowStep2) {
+        this.workflowStep2 = workflowStep2;
+        setModified();
+    }
+
+    void setWorkflowStep3(Group workflowStep3) {
+        this.workflowStep3 = workflowStep3;
+        setModified();
     }
 
     /**
-     * Get all the items in this collection. The order is indeterminate.
+     * Get the license that users must grant before submitting to this
+     * collection.
      *
-     * @return an iterator over the items in the collection.
-     * @throws SQLException
+     * @return the license for this collection
      */
-    public ItemIterator getAllItems() throws SQLException
+    public String getLicenseCollection()
     {
-        String myQuery = "SELECT item.* FROM item, collection2item WHERE "
-                + "item.item_id=collection2item.item_id AND "
-                + "collection2item.collection_id= ? ";
-
-        TableRowIterator rows = DatabaseManager.queryTable(ourContext, "item",
-                myQuery,getID());
-
-        return new ItemIterator(ourContext, rows);
-    }
-
-     /**
-     * Get the internal ID of this collection
-     *
-     * @return the internal identifier
-     */
-    public int getID()
-    {
-        return collectionRow.getIntColumn("collection_id");
+        return getCollectionService().getMetadata(this, "license");
     }
 
     /**
-     * @see org.dspace.content.DSpaceObject#getHandle()
+     * Set the license for this collection. Passing in <code>null</code> means
+     * that the site-wide default will be used.
+     *
+     * @param context context
+     * @param license the license, or <code>null</code>
+     * @throws SQLException if database error
      */
-    public String getHandle()
-    {
-        if(handle == null) {
-        	try {
-				handle = HandleManager.findHandle(this.ourContext, this);
-			} catch (SQLException e) {
-				// TODO Auto-generated catch block
-				//e.printStackTrace();
-			}
-        }
-    	return handle;
+    public void setLicense(Context context, String license) throws SQLException {
+        getCollectionService().setMetadata(context, this, "license", license);
     }
 
     /**
-     * Get the value of a metadata field
+     * Get the template item for this collection. <code>null</code> is
+     * returned if the collection does not have a template. Submission
+     * mechanisms may copy this template to provide a convenient starting point
+     * for a submission.
      *
-     * @param field
-     *            the name of the metadata field to get
-     *
-     * @return the value of the metadata field
-     *
-     * @exception IllegalArgumentException
-     *                if the requested metadata field doesn't exist
+     * @return the item template, or <code>null</code>
+     * @throws SQLException if database error
      */
-    @Deprecated
-    public String getMetadata(String field)
+    public Item getTemplateItem() throws SQLException
     {
-        String[] MDValue = getMDValueByLegacyField(field);
-        String value = getMetadataFirstValue(MDValue[0], MDValue[1], MDValue[2], Item.ANY);
-        return value == null ? "" : value;
+        return template;
+    }
+
+    void setTemplateItem(Item template) {
+        this.template = template;
+        setModified();
     }
 
     /**
-     * Set a metadata value
+     * Get the communities this collection appears in
      *
-     * @param field
-     *            the name of the metadata field to get
-     * @param value
-     *            value to set the field to
-     *
-     * @exception IllegalArgumentException
-     *                if the requested metadata field doesn't exist
-     * @exception MissingResourceException
+     * @return array of <code>Community</code> objects
+     * @throws SQLException if database error
      */
-    @Deprecated
-    public void setMetadata(String field, String value) throws MissingResourceException {
-        if ((field.trim()).equals("name") && (value == null || value.trim().equals("")))
-        {
-            try
-            {
-                value = I18nUtil.getMessage("org.dspace.workflow.WorkflowManager.untitled");
-            }
-            catch (MissingResourceException e)
-            {
-                value = "Untitled";
-            }
-        }
-
-        String[] MDValue = getMDValueByLegacyField(field);
-
-        /*
-         * Set metadata field to null if null
-         * and trim strings to eliminate excess
-         * whitespace.
-         */
-		if(value == null)
-        {
-            clearMetadata(MDValue[0], MDValue[1], MDValue[2], Item.ANY);
-            modifiedMetadata = true;
-        }
-        else
-        {
-            setMetadataSingleValue(MDValue[0], MDValue[1], MDValue[2], null, value);
-        }
-
-        addDetails(field);
-    }
-
-    public String getName()
+    public List<Community> getCommunities() throws SQLException
     {
-        String value = getMetadataFirstValue(MetadataSchema.DC_SCHEMA, "title", null, Item.ANY);
-        return value == null ? "" : value;
+        // We return a copy because we do not want people to add elements to this collection directly.
+        // We return a list to maintain backwards compatibility
+        Community[] output = communities.toArray(new Community[]{});
+        Arrays.sort(output, new NameAscendingComparator());
+        return Arrays.asList(output);
     }
+
+    void addCommunity(Community community) {
+        this.communities.add(community);
+        setModified();
+    }
+
+    void removeCommunity(Community community) {
+        this.communities.remove(community);
+        setModified();
+    }
+
 
     /**
-     * Get the logo for the collection. <code>null</code> is returned if the
-     * collection does not have a logo.
+     * Return <code>true</code> if <code>other</code> is the same Collection
+     * as this object, <code>false</code> otherwise
      *
-     * @return the logo of the collection, or <code>null</code>
+     * @param other
+     *            object to compare to
+     *
+     * @return <code>true</code> if object passed in represents the same
+     *         collection as this object
      */
-    public Bitstream getLogo()
-    {
-        return logo;
-    }
-
-    /**
-     * Give the collection a logo. Passing in <code>null</code> removes any
-     * existing logo. You will need to set the format of the new logo bitstream
-     * before it will work, for example to "JPEG". Note that
-     * <code>update</code> will need to be called for the change to take
-     * effect.  Setting a logo and not calling <code>update</code> later may
-     * result in a previous logo lying around as an "orphaned" bitstream.
-     *
-     * @param  is the stream to use as the new logo
-     *
-     * @return   the new logo bitstream, or <code>null</code> if there is no
-     *           logo (<code>null</code> was passed in)
-     * @throws AuthorizeException
-     * @throws IOException
-     * @throws SQLException
-     */
-    public Bitstream setLogo(InputStream is) throws AuthorizeException,
-            IOException, SQLException
-    {
-        // Check authorisation
-        // authorized to remove the logo when DELETE rights
-        // authorized when canEdit
-        if (!((is == null) && AuthorizeManager.authorizeActionBoolean(
-                ourContext, this, Constants.DELETE)))
-        {
-            canEdit(true);
-        }
-
-        // First, delete any existing logo
-        if (!collectionRow.isColumnNull("logo_bitstream_id"))
-        {
-            logo.delete();
-        }
-
-        if (is == null)
-        {
-            collectionRow.setColumnNull("logo_bitstream_id");
-            logo = null;
-
-            log.info(LogManager.getHeader(ourContext, "remove_logo",
-                    "collection_id=" + getID()));
-        }
-        else
-        {
-            Bitstream newLogo = Bitstream.create(ourContext, is);
-            collectionRow.setColumn("logo_bitstream_id", newLogo.getID());
-            logo = newLogo;
-
-            // now create policy for logo bitstream
-            // to match our READ policy
-            List<ResourcePolicy> policies = AuthorizeManager.getPoliciesActionFilter(ourContext, this, Constants.READ);
-            AuthorizeManager.addPolicies(ourContext, policies, newLogo);
-
-            log.info(LogManager.getHeader(ourContext, "set_logo",
-                    "collection_id=" + getID() + "logo_bitstream_id="
-                            + newLogo.getID()));
-        }
-
-        modified = true;
-        return logo;
-    }
-
-    /**
-     * Create a workflow group for the given step if one does not already exist.
-     * Returns either the newly created group or the previously existing one.
-     * Note that while the new group is created in the database, the association
-     * between the group and the collection is not written until
-     * <code>update</code> is called.
-     *
-     * @param step
-     *            the step (1-3) of the workflow to create or get the group for
-     *
-     * @return the workflow group associated with this collection
-     * @throws SQLException
-     * @throws AuthorizeException
-     */
+<<<<<<< HEAD
     public Group createWorkflowGroup(int step) throws SQLException,
             AuthorizeException
     {
@@ -730,11 +519,40 @@ public class Collection extends DSpaceObject
             g.update();
             setWorkflowGroup(step, g);
         }
+=======
+     @Override
+     public boolean equals(Object other)
+     {
+         if (other == null)
+         {
+             return false;
+         }
+         Class<?> objClass = HibernateProxyHelper.getClassWithoutInitializingProxy(other);
+         if (this.getClass() != objClass)
+         {
+             return false;
+         }
+         final Collection otherCollection = (Collection) other;
+         if (!this.getID().equals(otherCollection.getID() ))
+         {
+             return false;
+         }
 
-        return workflowGroup[step - 1];
-    }
+         return true;
+     }
+>>>>>>> aaafc1887bc2e36d28f8d9c37ba8cac67a059689
+
+     @Override
+     public int hashCode()
+     {
+         int hash = 5;
+         hash += 71 * hash + getType();
+         hash += 71 * hash + getID().hashCode();
+         return hash;
+     }
 
     /**
+<<<<<<< HEAD
      * Set the workflow group corresponding to a particular workflow step.
      * <code>null</code> can be passed in if there should be no associated
      * group for that workflow step.  Any existing group is NOT deleted.
@@ -813,187 +631,33 @@ public class Collection extends DSpaceObject
         } finally {
             ourContext.restoreAuthSystemState();
         }
+=======
+     * return type found in Constants
+     *
+     * @return int Constants.COLLECTION
+     */
+    @Override
+    public int getType()
+    {
+        return Constants.COLLECTION;
+>>>>>>> aaafc1887bc2e36d28f8d9c37ba8cac67a059689
     }
 
-    /**
-     * Get the the workflow group corresponding to a particular workflow step.
-     * This returns <code>null</code> if there is no group associated with
-     * this collection for the given step.
-     *
-     * @param step
-     *            the workflow step (1-3)
-     *
-     * @return the group of reviewers or <code>null</code>
-     */
-    public Group getWorkflowGroup(int step)
+    public void setWorkflowGroup(Context context, int step, Group g)
+            throws SQLException, AuthorizeException 
     {
-        return workflowGroup[step - 1];
+        getCollectionService().setWorkflowGroup(context, this, step, g);
     }
 
-    /**
-     * Create a default submitters group if one does not already exist. Returns
-     * either the newly created group or the previously existing one. Note that
-     * other groups may also be allowed to submit to this collection by the
-     * authorization system.
-     *
-     * @return the default group of submitters associated with this collection
-     * @throws SQLException
-     * @throws AuthorizeException
-     */
-    public Group createSubmitters() throws SQLException, AuthorizeException
-    {
-        // Check authorisation - Must be an Admin to create Submitters Group
-        AuthorizeUtil.authorizeManageSubmittersGroup(ourContext, this);
+    @Override
+    public Integer getLegacyId() {
+        return legacyId;
+    }
 
-        if (submitters == null)
+    private CollectionService getCollectionService() {
+        if(collectionService == null)
         {
-            //turn off authorization so that Collection Admins can create Collection Submitters
-            ourContext.turnOffAuthorisationSystem();
-            submitters = Group.create(ourContext);
-            ourContext.restoreAuthSystemState();
-
-            submitters.setName("COLLECTION_" + getID() + "_SUBMIT");
-            submitters.update();
-        }
-
-        // register this as the submitter group
-        collectionRow.setColumn("submitter", submitters.getID());
-
-        AuthorizeManager.addPolicy(ourContext, this, Constants.ADD, submitters);
-
-        modified = true;
-        return submitters;
-    }
-
-    /**
-     * Remove the submitters group, if no group has already been created
-     * then return without error. This will merely dereference the current
-     * submitters group from the collection so that it may be deleted
-     * without violating database constraints.
-     */
-    public void removeSubmitters() throws SQLException, AuthorizeException
-    {
-    	// Check authorisation - Must be an Admin to delete Submitters Group
-        AuthorizeUtil.authorizeManageSubmittersGroup(ourContext, this);
-
-        // just return if there is no administrative group.
-        if (submitters == null)
-        {
-            return;
-        }
-
-        // Remove the link to the collection table.
-        collectionRow.setColumnNull("submitter");
-        submitters = null;
-
-        modified = true;
-    }
-
-
-    /**
-     * Get the default group of submitters, if there is one. Note that the
-     * authorization system may allow others to submit to the collection, so
-     * this is not necessarily a definitive list of potential submitters.
-     * <P>
-     * The default group of submitters for collection 100 is the one called
-     * <code>collection_100_submit</code>.
-     *
-     * @return the default group of submitters, or <code>null</code> if there
-     *         is no default group.
-     */
-    public Group getSubmitters()
-    {
-        return submitters;
-    }
-
-    /**
-     * Create a default administrators group if one does not already exist.
-     * Returns either the newly created group or the previously existing one.
-     * Note that other groups may also be administrators.
-     *
-     * @return the default group of editors associated with this collection
-     * @throws SQLException
-     * @throws AuthorizeException
-     */
-    public Group createAdministrators() throws SQLException, AuthorizeException
-    {
-        // Check authorisation - Must be an Admin to create more Admins
-        AuthorizeUtil.authorizeManageAdminGroup(ourContext, this);
-
-        if (admins == null)
-        {
-            //turn off authorization so that Community Admins can create Collection Admins
-            ourContext.turnOffAuthorisationSystem();
-            admins = Group.create(ourContext);
-            ourContext.restoreAuthSystemState();
-
-            admins.setName("COLLECTION_" + getID() + "_ADMIN");
-            admins.update();
-        }
-
-        AuthorizeManager.addPolicy(ourContext, this,
-                Constants.ADMIN, admins);
-
-        // register this as the admin group
-        collectionRow.setColumn("admin", admins.getID());
-
-        modified = true;
-        return admins;
-    }
-
-    /**
-     * Remove the administrators group, if no group has already been created
-     * then return without error. This will merely dereference the current
-     * administrators group from the collection so that it may be deleted
-     * without violating database constraints.
-     */
-    public void removeAdministrators() throws SQLException, AuthorizeException
-    {
-        // Check authorisation - Must be an Admin of the parent community to delete Admin Group
-        AuthorizeUtil.authorizeRemoveAdminGroup(ourContext, this);
-
-        // just return if there is no administrative group.
-        if (admins == null)
-        {
-            return;
-        }
-
-        // Remove the link to the collection table.
-        collectionRow.setColumnNull("admin");
-        admins = null;
-
-        modified = true;
-    }
-
-    /**
-     * Get the default group of administrators, if there is one. Note that the
-     * authorization system may allow others to be administrators for the
-     * collection.
-     * <P>
-     * The default group of administrators for collection 100 is the one called
-     * <code>collection_100_admin</code>.
-     *
-     * @return group of administrators, or <code>null</code> if there is no
-     *         default group.
-     */
-    public Group getAdministrators()
-    {
-        return admins;
-    }
-
-    /**
-     * Get the license that users must grant before submitting to this
-     * collection. If the collection does not have a specific license, the
-     * site-wide default is returned.
-     *
-     * @return the license for this collection
-     */
-    public String getLicense()
-    {
-        String license = getMetadata("license");
-
-        if (license == null || license.trim().equals(""))
-        {
+<<<<<<< HEAD
             // Fallback to site-wide default
             license = LicenseManager.getDefaultSubmissionLicense();
         }
@@ -1902,7 +1566,10 @@ public class Collection extends DSpaceObject
             //ugh, handle that communities has subcommunities...
             //TODO  community.getAllCollections();
 
+=======
+            collectionService = ContentServiceFactory.getInstance().getCollectionService();
+>>>>>>> aaafc1887bc2e36d28f8d9c37ba8cac67a059689
         }
-        return collections.toArray(new Collection[0]);
+        return collectionService;
     }
 }

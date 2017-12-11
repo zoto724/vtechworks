@@ -8,6 +8,7 @@
 package org.dspace.servicemanager;
 
 import java.util.Date;
+import java.util.List;
 
 import javax.management.Attribute;
 import javax.management.AttributeList;
@@ -23,12 +24,13 @@ import javax.management.modelmbean.ModelMBeanAttributeInfo;
 import javax.management.modelmbean.ModelMBeanInfoSupport;
 import javax.management.modelmbean.ModelMBeanOperationInfo;
 
-import org.dspace.kernel.CommonLifecycle;
 import org.dspace.kernel.DSpaceKernel;
 import org.dspace.kernel.DSpaceKernelManager;
 import org.dspace.kernel.ServiceManager;
 import org.dspace.servicemanager.config.DSpaceConfigurationService;
 import org.dspace.services.ConfigurationService;
+import org.dspace.services.KernelStartupCallbackService;
+import org.dspace.services.factory.DSpaceServicesFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -47,7 +49,7 @@ import org.slf4j.LoggerFactory;
  * 
  * @author Aaron Zeckoski (azeckoski @ gmail.com)
  */
-public final class DSpaceKernelImpl implements DSpaceKernel, DynamicMBean, CommonLifecycle<DSpaceKernel> {
+public final class DSpaceKernelImpl implements DSpaceKernel, DynamicMBean {
 
     private static Logger log = LoggerFactory.getLogger(DSpaceKernelImpl.class);
 
@@ -156,6 +158,11 @@ public final class DSpaceKernelImpl implements DSpaceKernel, DynamicMBean, Commo
 
             kernel = this;
             running = true;
+
+            List<KernelStartupCallbackService> callbackServices = DSpaceServicesFactory.getInstance().getServiceManager().getServicesByType(KernelStartupCallbackService.class);
+            for (KernelStartupCallbackService callbackService : callbackServices) {
+                callbackService.executeCallback();
+            }
             // add in the shutdown hook
             registerShutdownHook();
         }
@@ -189,6 +196,7 @@ public final class DSpaceKernelImpl implements DSpaceKernel, DynamicMBean, Commo
     /* (non-Javadoc)
      * @see org.dspace.kernel.CommonLifecycle#destroy()
      */
+    @Override
     public void destroy() {
         if (this.destroyed) {
             return;
@@ -252,13 +260,19 @@ public final class DSpaceKernelImpl implements DSpaceKernel, DynamicMBean, Commo
     // MBEAN methods
 
     private Date lastLoadDate;
-    /** Time that this kernel was started, as a java.util.Date. */
+    /** 
+     * Time that this kernel was started, as a java.util.Date. 
+     * @return date object
+     **/
     public Date getLastLoadDate() {
         return new Date(lastLoadDate.getTime());
     }
 
     private long loadTime;
-    /** Time that this kernel was started, as seconds since the epoch. */
+    /** 
+     * Time that this kernel was started, as seconds since the epoch. 
+     * @return seconds since epoch (as a long)
+     **/
     public long getLoadTime() {
         return loadTime;
     }

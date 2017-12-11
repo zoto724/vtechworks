@@ -10,14 +10,13 @@ package org.dspace.storage.rdbms.migration;
 import java.io.IOException;
 import java.sql.Connection;
 import java.sql.SQLException;
-import org.dspace.storage.rdbms.MigrationUtils;
 import org.flywaydb.core.api.migration.MigrationChecksumProvider;
 import org.flywaydb.core.api.migration.jdbc.JdbcMigration;
 
 /**
  * This class is in support of the "V1.6__Upgrade_to_DSpace_1.6_schema.sql"
  * It simply drops a few database constraints. This is necessary for the upgrade
- * from 1.5 -> 1.6
+ * from 1.5 to 1.6
  * <P>
  * This class was created because the names of database constraints differs based
  * on the type of database (Postgres vs. Oracle vs. H2). As such, it becomes difficult
@@ -46,17 +45,30 @@ public class V1_5_9__Drop_constraint_for_DSpace_1_6_schema
     /**
      * Actually migrate the existing database
      * @param connection
+     *     SQL Connection object
+     * @throws IOException
+     *     A general class of exceptions produced by failed or interrupted I/O operations.
+     * @throws SQLException
+     *     An exception that provides information on a database access error or other errors.
      */
     @Override
     public void migrate(Connection connection)
             throws IOException, SQLException
     {
         // Drop the constraint associated with "collection_id" column of "community2collection" table
+<<<<<<< HEAD
         int return1 = MigrationUtils.dropDBConstraint(connection, "community2collection", "collection_id");
         // Drop the constraint associated with "child_comm_id" column of "community2community" table
         int return2 = MigrationUtils.dropDBConstraint(connection, "community2community", "child_comm_id");
         // Drop the constraint associated with "item_id" column of "collection2item" table
         int return3 = MigrationUtils.dropDBConstraint(connection, "collection2item", "item_id");
+=======
+        int return1 = MigrationUtils.dropDBConstraint(connection, "community2collection", "collection_id", "pkey");
+        // Drop the constraint associated with "child_comm_id" column of "community2community" table
+        int return2 = MigrationUtils.dropDBConstraint(connection, "community2community", "child_comm_id", "pkey");
+        // Drop the constraint associated with "item_id" column of "collection2item" table
+        int return3 = MigrationUtils.dropDBConstraint(connection, "collection2item", "item_id", "pkey");
+>>>>>>> aaafc1887bc2e36d28f8d9c37ba8cac67a059689
 
 	// Checksum will just be the sum of those three return values
 	checksum = return1 + return2 + return3;

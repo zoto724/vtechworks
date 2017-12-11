@@ -10,7 +10,6 @@ package org.dspace.storage.rdbms.migration;
 import java.io.IOException;
 import java.sql.Connection;
 import java.sql.SQLException;
-import org.dspace.storage.rdbms.MigrationUtils;
 import org.flywaydb.core.api.migration.MigrationChecksumProvider;
 import org.flywaydb.core.api.migration.jdbc.JdbcMigration;
 
@@ -47,6 +46,14 @@ public class V5_0_2014_09_25__DS_1582_Metadata_For_All_Objects_drop_constraint
     /**
      * Actually migrate the existing database
      * @param connection
+<<<<<<< HEAD
+=======
+     *     SQL Connection object
+     * @throws IOException
+     *     A general class of exceptions produced by failed or interrupted I/O operations.
+     * @throws SQLException
+     *     An exception that provides information on a database access error or other errors.
+>>>>>>> aaafc1887bc2e36d28f8d9c37ba8cac67a059689
      */
     @Override
     public void migrate(Connection connection)

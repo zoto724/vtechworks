@@ -7,34 +7,28 @@
  */
 package org.dspace.rest;
 
-import java.io.IOException;
-import java.sql.SQLException;
-import java.util.ArrayList;
-
-import javax.servlet.http.HttpServletRequest;
-import javax.ws.rs.Consumes;
-import javax.ws.rs.DELETE;
-import javax.ws.rs.DefaultValue;
-import javax.ws.rs.GET;
-import javax.ws.rs.POST;
-import javax.ws.rs.PUT;
-import javax.ws.rs.Path;
-import javax.ws.rs.PathParam;
-import javax.ws.rs.Produces;
-import javax.ws.rs.QueryParam;
-import javax.ws.rs.WebApplicationException;
-import javax.ws.rs.core.Context;
-import javax.ws.rs.core.HttpHeaders;
-import javax.ws.rs.core.MediaType;
-import javax.ws.rs.core.Response;
-
 import org.apache.log4j.Logger;
 import org.dspace.authorize.AuthorizeException;
-import org.dspace.authorize.AuthorizeManager;
+import org.dspace.authorize.factory.AuthorizeServiceFactory;
+import org.dspace.authorize.service.AuthorizeService;
+import org.dspace.content.factory.ContentServiceFactory;
+import org.dspace.content.service.CollectionService;
+import org.dspace.content.service.CommunityService;
 import org.dspace.rest.common.Collection;
 import org.dspace.rest.common.Community;
 import org.dspace.rest.exceptions.ContextException;
 import org.dspace.usage.UsageEvent;
+
+import javax.servlet.http.HttpServletRequest;
+import javax.ws.rs.*;
+import javax.ws.rs.core.Context;
+import javax.ws.rs.core.HttpHeaders;
+import javax.ws.rs.core.MediaType;
+import javax.ws.rs.core.Response;
+import java.io.IOException;
+import java.sql.SQLException;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * Class which provides CRUD methods over communities.
@@ -45,6 +39,10 @@ import org.dspace.usage.UsageEvent;
 @Path("/communities")
 public class CommunitiesResource extends Resource
 {
+    protected CommunityService communityService = ContentServiceFactory.getInstance().getCommunityService();
+    protected CollectionService collectionService = ContentServiceFactory.getInstance().getCollectionService();
+    protected AuthorizeService authorizeService = AuthorizeServiceFactory.getInstance().getAuthorizeService();
+
     private static Logger log = Logger.getLogger(CommunitiesResource.class);
 
     /**
@@ -52,26 +50,37 @@ public class CommunitiesResource extends Resource
      * parameter or method for community collections or subcommunities.
      * 
      * @param communityId
-     *            Id of community in DSpace.
+     *     Id of community in DSpace.
      * @param expand
-     *            String in which is what you want to add to returned instance
-     *            of community. Options are: "all", "parentCommunity",
-     *            "collections", "subCommunities" and "logo". If you want to use
-     *            multiple options, it must be separated by commas.
+     *     String in which is what you want to add to returned instance
+     *     of community. Options are: "all", "parentCommunity",
+     *     "collections", "subCommunities" and "logo". If you want to use
+     *     multiple options, it must be separated by commas.
+     * @param user_ip
+     *     User's IP address.
+     * @param user_agent
+     *     User agent string (specifies browser used and its version).
+     * @param xforwardedfor
+     *     When accessed via a reverse proxy, the application sees the proxy's IP as the
+     *     source of the request. The proxy may be configured to add the
+     *     "X-Forwarded-For" HTTP header containing the original IP of the client
+     *     so that the reverse-proxied application can get the client's IP.
      * @param headers
-     *            If you want to access to community under logged user into
-     *            context. In headers must be set header "rest-dspace-token"
-     *            with passed token from login method.
+     *     If you want to access the community as the user logged into the
+     *     context. The value of the "rest-dspace-token" header must be set
+     *     to the token received from the login method response.
+     * @param request
+     *     Servlet's HTTP request object.
      * @return Return instance of org.dspace.rest.common.Community.
      * @throws WebApplicationException
-     *             It is throw when was problem with creating context or problem
-     *             with database reading. Also if id of community is incorrect
-     *             or logged user into context has no permission to read.
+     *     Thrown if there was a problem with creating context or problem
+     *     with database reading. Also if id of community is incorrect
+     *     or logged user into context has no permission to read.
      */
     @GET
     @Path("/{community_id}")
     @Produces({ MediaType.APPLICATION_JSON, MediaType.APPLICATION_XML })
-    public Community getCommunity(@PathParam("community_id") Integer communityId, @QueryParam("expand") String expand,
+    public Community getCommunity(@PathParam("community_id") String communityId, @QueryParam("expand") String expand,
             @QueryParam("userIP") String user_ip, @QueryParam("userAgent") String user_agent,
             @QueryParam("xforwardedfor") String xforwardedfor, @Context HttpHeaders headers, @Context HttpServletRequest request)
             throws WebApplicationException
@@ -83,13 +92,13 @@ public class CommunitiesResource extends Resource
 
         try
         {
-            context = createContext(getUser(headers));
+            context = createContext();
 
             org.dspace.content.Community dspaceCommunity = findCommunity(context, communityId, org.dspace.core.Constants.READ);
             writeStats(dspaceCommunity, UsageEvent.Action.VIEW, user_ip, user_agent, xforwardedfor, headers,
                     request, context);
 
-            community = new Community(dspaceCommunity, expand, context);
+            community = new Community(dspaceCommunity, servletContext, expand, context);
             context.complete();
 
         }
@@ -116,23 +125,33 @@ public class CommunitiesResource extends Resource
      * Return all communities in DSpace.
      * 
      * @param expand
-     *            String in which is what you want to add to returned instance
-     *            of community. Options are: "all", "parentCommunity",
-     *            "collections", "subCommunities" and "logo". If you want to use
-     *            multiple options, it must be separated by commas.
-     * 
+     *     String in which is what you want to add to returned instance
+     *     of community. Options are: "all", "parentCommunity",
+     *     "collections", "subCommunities" and "logo". If you want to use
+     *     multiple options, it must be separated by commas.
      * @param limit
-     *            Maximum communities in array. Default value is 100.
+     *     Maximum communities in array. Default value is 100.
      * @param offset
-     *            Index from which will start array of communities.
+     *     Index from which will start array of communities.
+     * @param user_ip
+     *     User's IP address.
+     * @param user_agent
+     *     User agent string (specifies browser used and its version).
+     * @param xforwardedfor
+     *     When accessed via a reverse proxy, the application sees the proxy's IP as the
+     *     source of the request. The proxy may be configured to add the
+     *     "X-Forwarded-For" HTTP header containing the original IP of the client
+     *     so that the reverse-proxied application can get the client's IP.
      * @param headers
-     *            If you want to access to community under logged user into
-     *            context. In headers must be set header "rest-dspace-token"
-     *            with passed token from login method.
+     *     If you want to access the community as the user logged into the
+     *     context. The value of the "rest-dspace-token" header must be set
+     *     to the token received from the login method response.
+     * @param request
+     *     Servlet's HTTP request object.
      * @return Return array of communities.
      * @throws WebApplicationException
-     *             It can be caused by creating context or while was problem
-     *             with reading community from database(SQLException).
+     *     It can be caused by creating context or while was problem
+     *     with reading community from database(SQLException).
      */
     @GET
     @Produces({ MediaType.APPLICATION_JSON, MediaType.APPLICATION_XML })
@@ -149,9 +168,9 @@ public class CommunitiesResource extends Resource
 
         try
         {
-            context = createContext(getUser(headers));
+            context = createContext();
 
-            org.dspace.content.Community[] dspaceCommunities = org.dspace.content.Community.findAll(context);
+            List<org.dspace.content.Community> dspaceCommunities = communityService.findAll(context);
             communities = new ArrayList<Community>();
 
             if (!((limit != null) && (limit >= 0) && (offset != null) && (offset >= 0)))
@@ -161,12 +180,12 @@ public class CommunitiesResource extends Resource
                 offset = 0;
             }
 
-            for (int i = offset; (i < (offset + limit)) && i < dspaceCommunities.length; i++)
+            for (int i = offset; (i < (offset + limit)) && i < dspaceCommunities.size(); i++)
             {
-                if (AuthorizeManager.authorizeActionBoolean(context, dspaceCommunities[i], org.dspace.core.Constants.READ))
+                if (authorizeService.authorizeActionBoolean(context, dspaceCommunities.get(i), org.dspace.core.Constants.READ))
                 {
-                    Community community = new Community(dspaceCommunities[i], expand, context);
-                    writeStats(dspaceCommunities[i], UsageEvent.Action.VIEW, user_ip, user_agent,
+                    Community community = new Community(dspaceCommunities.get(i), servletContext, expand, context);
+                    writeStats(dspaceCommunities.get(i), UsageEvent.Action.VIEW, user_ip, user_agent,
                             xforwardedfor, headers, request, context);
                     communities.add(community);
                 }
@@ -196,24 +215,34 @@ public class CommunitiesResource extends Resource
      * the root of tree.
      * 
      * @param expand
-     *            String in which is what you want to add to returned instance
-     *            of community. Options are: "all", "parentCommunity",
-     *            "collections", "subCommunities" and "logo". If you want to use
-     *            multiple options, it must be separated by commas.
-     * 
+     *     String in which is what you want to add to returned instance
+     *     of community. Options are: "all", "parentCommunity",
+     *     "collections", "subCommunities" and "logo". If you want to use
+     *     multiple options, it must be separated by commas.
      * @param limit
-     *            Maximum communities in array. Default value is 100.
+     *     Maximum communities in array. Default value is 100.
      * @param offset
-     *            Index from which will start array of communities. Default
-     *            value is 0.
+     *     Index from which will start array of communities. Default
+     *     value is 0.
+     * @param user_ip
+     *     User's IP address.
+     * @param user_agent
+     *     User agent string (specifies browser used and its version).
+     * @param xforwardedfor
+     *     When accessed via a reverse proxy, the application sees the proxy's IP as the
+     *     source of the request. The proxy may be configured to add the
+     *     "X-Forwarded-For" HTTP header containing the original IP of the client
+     *     so that the reverse-proxied application can get the client's IP.
      * @param headers
-     *            If you want to access to community under logged user into
-     *            context. In headers must be set header "rest-dspace-token"
-     *            with passed token from login method.
+     *     If you want to access the community as the user logged into the
+     *     context. The value of the "rest-dspace-token" header must be set
+     *     to the token received from the login method response.
+     * @param request
+     *     Servlet's HTTP request object.
      * @return Return array of top communities.
      * @throws WebApplicationException
-     *             It can be caused by creating context or while was problem
-     *             with reading community from database(SQLException).
+     *     It can be caused by creating context or while was problem
+     *     with reading community from database(SQLException).
      */
     @GET
     @Path("/top-communities")
@@ -231,24 +260,24 @@ public class CommunitiesResource extends Resource
 
         try
         {
-            context = createContext(getUser(headers));
+            context = createContext();
 
-            org.dspace.content.Community[] dspaceCommunities = org.dspace.content.Community.findAllTop(context);
+            List<org.dspace.content.Community> dspaceCommunities = communityService.findAllTop(context);
             communities = new ArrayList<Community>();
 
             if (!((limit != null) && (limit >= 0) && (offset != null) && (offset >= 0)))
             {
-                log.warn("Pagging was badly set, using default values.");
+                log.warn("Paging was badly set, using default values.");
                 limit = 100;
                 offset = 0;
             }
 
-            for (int i = offset; (i < (offset + limit)) && i < dspaceCommunities.length; i++)
+            for (int i = offset; (i < (offset + limit)) && i < dspaceCommunities.size(); i++)
             {
-                if (AuthorizeManager.authorizeActionBoolean(context, dspaceCommunities[i], org.dspace.core.Constants.READ))
+                if (authorizeService.authorizeActionBoolean(context, dspaceCommunities.get(i), org.dspace.core.Constants.READ))
                 {
-                    Community community = new Community(dspaceCommunities[i], expand, context);
-                    writeStats(dspaceCommunities[i], UsageEvent.Action.VIEW, user_ip, user_agent,
+                    Community community = new Community(dspaceCommunities.get(i), servletContext, expand, context);
+                    writeStats(dspaceCommunities.get(i), UsageEvent.Action.VIEW, user_ip, user_agent,
                             xforwardedfor, headers, request, context);
                     communities.add(community);
                 }
@@ -277,30 +306,41 @@ public class CommunitiesResource extends Resource
      * Return all collections of community.
      * 
      * @param communityId
-     *            Id of community in DSpace.
+     *     Id of community in DSpace.
      * @param expand
-     *            String in which is what you want to add to returned instance
-     *            of collection. Options are: "all", "parentCommunityList",
-     *            "parentCommunity", "items", "license" and "logo". If you want
-     *            to use multiple options, it must be separated by commas.
+     *     String in which is what you want to add to returned instance
+     *     of collection. Options are: "all", "parentCommunityList",
+     *     "parentCommunity", "items", "license" and "logo". If you want
+     *     to use multiple options, it must be separated by commas.
      * @param limit
-     *            Maximum collection in array. Default value is 100.
+     *     Maximum collection in array. Default value is 100.
      * @param offset
-     *            Index from which will start array of collections. Default
-     *            value is 0.
+     *     Index from which will start array of collections. Default
+     *     value is 0.
+     * @param user_ip
+     *     User's IP address.
+     * @param user_agent
+     *     User agent string (specifies browser used and its version).
+     * @param xforwardedfor
+     *     When accessed via a reverse proxy, the application sees the proxy's IP as the
+     *     source of the request. The proxy may be configured to add the
+     *     "X-Forwarded-For" HTTP header containing the original IP of the client
+     *     so that the reverse-proxied application can get the client's IP.
      * @param headers
-     *            If you want to access to community under logged user into
-     *            context. In headers must be set header "rest-dspace-token"
-     *            with passed token from login method.
+     *     If you want to access the community as the user logged into the
+     *     context. The value of the "rest-dspace-token" header must be set
+     *     to the token received from the login method response.
+     * @param request
+     *     Servlet's HTTP request object.
      * @return Return array of collections of community.
      * @throws WebApplicationException
-     *             It can be caused by creating context or while was problem
-     *             with reading community from database(SQLException).
+     *     It can be caused by creating context or while was problem
+     *     with reading community from database(SQLException).
      */
     @GET
     @Path("/{community_id}/collections")
     @Produces({ MediaType.APPLICATION_JSON, MediaType.APPLICATION_XML })
-    public Collection[] getCommunityCollections(@PathParam("community_id") Integer communityId,
+    public Collection[] getCommunityCollections(@PathParam("community_id") String communityId,
             @QueryParam("expand") String expand, @QueryParam("limit") @DefaultValue("100") Integer limit,
             @QueryParam("offset") @DefaultValue("0") Integer offset, @QueryParam("userIP") String user_ip,
             @QueryParam("userAgent") String user_agent, @QueryParam("xforwardedfor") String xforwardedfor,
@@ -313,7 +353,7 @@ public class CommunitiesResource extends Resource
 
         try
         {
-            context = createContext(getUser(headers));
+            context = createContext();
 
             org.dspace.content.Community dspaceCommunity = findCommunity(context, communityId, org.dspace.core.Constants.READ);
             writeStats(dspaceCommunity, UsageEvent.Action.VIEW, user_ip, user_agent, xforwardedfor, headers,
@@ -327,13 +367,13 @@ public class CommunitiesResource extends Resource
             }
 
             collections = new ArrayList<Collection>();
-            org.dspace.content.Collection[] dspaceCollections = dspaceCommunity.getCollections();
-            for (int i = offset; (i < (offset + limit)) && (i < dspaceCollections.length); i++)
+            List<org.dspace.content.Collection> dspaceCollections = dspaceCommunity.getCollections();
+            for (int i = offset; (i < (offset + limit)) && (i < dspaceCollections.size()); i++)
             {
-                if (AuthorizeManager.authorizeActionBoolean(context, dspaceCollections[i], org.dspace.core.Constants.READ))
+                if (authorizeService.authorizeActionBoolean(context, dspaceCollections.get(i), org.dspace.core.Constants.READ))
                 {
-                    collections.add(new Collection(dspaceCollections[i], expand, context, 20, 0));
-                    writeStats(dspaceCollections[i], UsageEvent.Action.VIEW, user_ip, user_agent,
+                    collections.add(new Collection(dspaceCollections.get(i), servletContext, expand, context, 20, 0));
+                    writeStats(dspaceCollections.get(i), UsageEvent.Action.VIEW, user_ip, user_agent,
                             xforwardedfor, headers, request, context);
                 }
             }
@@ -363,30 +403,41 @@ public class CommunitiesResource extends Resource
      * Return all subcommunities of community.
      * 
      * @param communityId
-     *            Id of community in DSpace.
+     *     Id of community in DSpace.
      * @param expand
-     *            String in which is what you want to add to returned instance
-     *            of community. Options are: "all", "parentCommunity",
-     *            "collections", "subCommunities" and "logo". If you want to use
-     *            multiple options, it must be separated by commas.
+     *     String in which is what you want to add to returned instance
+     *     of community. Options are: "all", "parentCommunity",
+     *     "collections", "subCommunities" and "logo". If you want to use
+     *     multiple options, it must be separated by commas.
      * @param limit
-     *            Maximum communities in array. Default value is 20.
+     *     Maximum communities in array. Default value is 20.
      * @param offset
-     *            Index from which will start array of communities. Default
-     *            value is 0.
+     *     Index from which will start array of communities. Default
+     *     value is 0.
+     * @param user_ip
+     *     User's IP address.
+     * @param user_agent
+     *     User agent string (specifies browser used and its version).
+     * @param xforwardedfor
+     *     When accessed via a reverse proxy, the application sees the proxy's IP as the
+     *     source of the request. The proxy may be configured to add the
+     *     "X-Forwarded-For" HTTP header containing the original IP of the client
+     *     so that the reverse-proxied application can get the client's IP.
      * @param headers
-     *            If you want to access to community under logged user into
-     *            context. In headers must be set header "rest-dspace-token"
-     *            with passed token from login method.
+     *     If you want to access the community as the user logged into the
+     *     context. The value of the "rest-dspace-token" header must be set
+     *     to the token received from the login method response.
+     * @param request
+     *     Servlet's HTTP request object.
      * @return Return array of subcommunities of community.
      * @throws WebApplicationException
-     *             It can be caused by creating context or while was problem
-     *             with reading community from database(SQLException).
+     *     It can be caused by creating context or while was problem
+     *     with reading community from database(SQLException).
      */
     @GET
     @Path("/{community_id}/communities")
     @Produces({ MediaType.APPLICATION_JSON, MediaType.APPLICATION_XML })
-    public Community[] getCommunityCommunities(@PathParam("community_id") Integer communityId,
+    public Community[] getCommunityCommunities(@PathParam("community_id") String communityId,
             @QueryParam("expand") String expand, @QueryParam("limit") @DefaultValue("20") Integer limit,
             @QueryParam("offset") @DefaultValue("0") Integer offset, @QueryParam("userIP") String user_ip,
             @QueryParam("userAgent") String user_agent, @QueryParam("xforwardedfor") String xforwardedfor,
@@ -399,7 +450,7 @@ public class CommunitiesResource extends Resource
 
         try
         {
-            context = createContext(getUser(headers));
+            context = createContext();
 
             org.dspace.content.Community dspaceCommunity = findCommunity(context, communityId, org.dspace.core.Constants.READ);
             writeStats(dspaceCommunity, UsageEvent.Action.VIEW, user_ip, user_agent, xforwardedfor, headers,
@@ -413,13 +464,13 @@ public class CommunitiesResource extends Resource
             }
 
             communities = new ArrayList<Community>();
-            org.dspace.content.Community[] dspaceCommunities = dspaceCommunity.getSubcommunities();
-            for (int i = offset; (i < (offset + limit)) && (i < dspaceCommunities.length); i++)
+            List<org.dspace.content.Community> dspaceCommunities = dspaceCommunity.getSubcommunities();
+            for (int i = offset; (i < (offset + limit)) && (i < dspaceCommunities.size()); i++)
             {
-                if (AuthorizeManager.authorizeActionBoolean(context, dspaceCommunities[i], org.dspace.core.Constants.READ))
+                if (authorizeService.authorizeActionBoolean(context, dspaceCommunities.get(i), org.dspace.core.Constants.READ))
                 {
-                    communities.add(new Community(dspaceCommunities[i], expand, context));
-                    writeStats(dspaceCommunities[i], UsageEvent.Action.VIEW, user_ip, user_agent,
+                    communities.add(new Community(dspaceCommunities.get(i), servletContext, expand, context));
+                    writeStats(dspaceCommunities.get(i), UsageEvent.Action.VIEW, user_ip, user_agent,
                             xforwardedfor, headers, request, context);
                 }
             }
@@ -451,15 +502,26 @@ public class CommunitiesResource extends Resource
      * permission only admin.
      * 
      * @param community
-     *            Community which will be created at top level of communities.
+     *     Community which will be created at top level of communities.
+     * @param user_ip
+     *     User's IP address.
+     * @param user_agent
+     *     User agent string (specifies browser used and its version).
+     * @param xforwardedfor
+     *     When accessed via a reverse proxy, the application sees the proxy's IP as the
+     *     source of the request. The proxy may be configured to add the
+     *     "X-Forwarded-For" HTTP header containing the original IP of the client
+     *     so that the reverse-proxied application can get the client's IP.
      * @param headers
-     *            If you want to access to community under logged user into
-     *            context. In headers must be set header "rest-dspace-token"
-     *            with passed token from login method.
+     *     If you want to access the community as the user logged into the
+     *     context. The value of the "rest-dspace-token" header must be set
+     *     to the token received from the login method response.
+     * @param request
+     *     Servlet's HTTP request object.
      * @return Returns response with handle of community, if was all ok.
      * @throws WebApplicationException
-     *             It can be thrown by SQLException, AuthorizeException and
-     *             ContextException.
+     *     It can be thrown by SQLException, AuthorizeException and
+     *     ContextException.
      */
     @POST
     @Consumes({ MediaType.APPLICATION_JSON, MediaType.APPLICATION_XML })
@@ -474,9 +536,8 @@ public class CommunitiesResource extends Resource
 
         try
         {
-            context = createContext(getUser(headers));
-
-            if (!AuthorizeManager.isAdmin(context))
+            context = createContext();
+            if (!authorizeService.isAdmin(context))
             {
                 context.abort();
                 String user = "anonymous";
@@ -488,20 +549,19 @@ public class CommunitiesResource extends Resource
                 throw new WebApplicationException(Response.Status.UNAUTHORIZED);
             }
 
-            org.dspace.content.Community dspaceCommunity = org.dspace.content.Community.create(null, context);
+            org.dspace.content.Community dspaceCommunity = communityService.create(null, context);
             writeStats(dspaceCommunity, UsageEvent.Action.CREATE, user_ip, user_agent, xforwardedfor,
                     headers, request, context);
 
-            dspaceCommunity.setMetadata("name", community.getName());
-            dspaceCommunity.setMetadata(org.dspace.content.Community.COPYRIGHT_TEXT, community.getCopyrightText());
-            dspaceCommunity.setMetadata(org.dspace.content.Community.INTRODUCTORY_TEXT, community.getIntroductoryText());
-            dspaceCommunity.setMetadata(org.dspace.content.Community.SHORT_DESCRIPTION, community.getShortDescription());
-            dspaceCommunity.setMetadata(org.dspace.content.Community.SIDEBAR_TEXT, community.getSidebarText());
-            dspaceCommunity.update();
+            communityService.setMetadata(context, dspaceCommunity, "name", community.getName());
+            communityService.setMetadata(context, dspaceCommunity, org.dspace.content.Community.COPYRIGHT_TEXT, community.getCopyrightText());
+            communityService.setMetadata(context, dspaceCommunity, org.dspace.content.Community.INTRODUCTORY_TEXT, community.getIntroductoryText());
+            communityService.setMetadata(context, dspaceCommunity, org.dspace.content.Community.SHORT_DESCRIPTION, community.getShortDescription());
+            communityService.setMetadata(context, dspaceCommunity, org.dspace.content.Community.SIDEBAR_TEXT, community.getSidebarText());
+            communityService.update(context, dspaceCommunity);
 
-            retCommunity = new Community(dspaceCommunity, "", context);
+            retCommunity = new Community(dspaceCommunity, servletContext, "", context);
             context.complete();
-
         }
         catch (SQLException e)
         {
@@ -529,25 +589,36 @@ public class CommunitiesResource extends Resource
      * Create collection in community.
      * 
      * @param communityId
-     *            Id of community in DSpace.
+     *     Id of community in DSpace.
      * @param collection
-     *            Collection which will be added into community.
+     *     Collection which will be added into community.
+     * @param user_ip
+     *     User's IP address.
+     * @param user_agent
+     *     User agent string (specifies browser used and its version).
+     * @param xforwardedfor
+     *     When accessed via a reverse proxy, the application sees the proxy's IP as the
+     *     source of the request. The proxy may be configured to add the
+     *     "X-Forwarded-For" HTTP header containing the original IP of the client
+     *     so that the reverse-proxied application can get the client's IP.
      * @param headers
-     *            If you want to access to community under logged user into
-     *            context. In headers must be set header "rest-dspace-token"
-     *            with passed token from login method.
+     *     If you want to access the community as the user logged into the
+     *     context. The value of the "rest-dspace-token" header must be set
+     *     to the token received from the login method response.
+     * @param request
+     *     Servlet's HTTP request object.
      * @return Return response 200 if was everything all right. Otherwise 400
-     *         when id of community was incorrect or 401 if was problem with
-     *         permission to write into collection.
+     *     when id of community was incorrect or 401 if was problem with
+     *     permission to write into collection.
      * @throws WebApplicationException
-     *             It is thrown when was problem with database reading or
-     *             writing. Or problem with authorization to community. Or
-     *             problem with creating context.
+     *     It is thrown when was problem with database reading or
+     *     writing. Or problem with authorization to community. Or
+     *     problem with creating context.
      */
     @POST
     @Path("/{community_id}/collections")
     @Consumes({ MediaType.APPLICATION_JSON, MediaType.APPLICATION_XML })
-    public Collection addCommunityCollection(@PathParam("community_id") Integer communityId, Collection collection,
+    public Collection addCommunityCollection(@PathParam("community_id") String communityId, Collection collection,
             @QueryParam("userIP") String user_ip, @QueryParam("userAgent") String user_agent,
             @QueryParam("xforwardedfor") String xforwardedfor, @Context HttpHeaders headers, @Context HttpServletRequest request)
             throws WebApplicationException
@@ -559,25 +630,22 @@ public class CommunitiesResource extends Resource
 
         try
         {
-            context = createContext(getUser(headers));
-            org.dspace.content.Community dspaceCommunity = findCommunity(context, communityId, org.dspace.core.Constants.WRITE);
+            context = createContext();
 
+            org.dspace.content.Community dspaceCommunity = findCommunity(context, communityId, org.dspace.core.Constants.WRITE);
             writeStats(dspaceCommunity, UsageEvent.Action.UPDATE, user_ip, user_agent, xforwardedfor,
                     headers, request, context);
-
-            org.dspace.content.Collection dspaceCollection = dspaceCommunity.createCollection();
-            dspaceCollection.setLicense(collection.getLicense());
+            org.dspace.content.Collection dspaceCollection = collectionService.create(context, dspaceCommunity);
+            collectionService.setMetadata(context, dspaceCollection, "license", collection.getLicense());
             // dspaceCollection.setLogo(collection.getLogo()); // TODO Add this option.
-            dspaceCollection.setMetadata("name", collection.getName());
-            dspaceCollection.setMetadata(org.dspace.content.Collection.COPYRIGHT_TEXT, collection.getCopyrightText());
-            dspaceCollection.setMetadata(org.dspace.content.Collection.INTRODUCTORY_TEXT, collection.getIntroductoryText());
-            dspaceCollection.setMetadata(org.dspace.content.Collection.SHORT_DESCRIPTION, collection.getShortDescription());
-            dspaceCollection.setMetadata(org.dspace.content.Collection.SIDEBAR_TEXT, collection.getSidebarText());
-            dspaceCollection.setLicense(collection.getLicense());
-            dspaceCollection.update();
-            dspaceCommunity.update();
-
-            retCollection = new Collection(dspaceCollection, "", context, 100, 0);
+            collectionService.setMetadata(context, dspaceCollection, "name", collection.getName());
+            collectionService.setMetadata(context, dspaceCollection, org.dspace.content.Collection.COPYRIGHT_TEXT, collection.getCopyrightText());
+            collectionService.setMetadata(context, dspaceCollection, org.dspace.content.Collection.INTRODUCTORY_TEXT, collection.getIntroductoryText());
+            collectionService.setMetadata(context, dspaceCollection, org.dspace.content.Collection.SHORT_DESCRIPTION, collection.getShortDescription());
+            collectionService.setMetadata(context, dspaceCollection, org.dspace.content.Collection.SIDEBAR_TEXT, collection.getSidebarText());
+            collectionService.update(context, dspaceCollection);
+            communityService.update(context, dspaceCommunity);
+            retCollection = new Collection(dspaceCollection, servletContext, "", context, 100, 0);
             context.complete();
 
         }
@@ -612,26 +680,37 @@ public class CommunitiesResource extends Resource
      * Create subcommunity in community.
      * 
      * @param communityId
-     *            Id of community in DSpace, in which will be created
-     *            subcommunity.
+     *     Id of community in DSpace, in which will be created
+     *     subcommunity.
      * @param community
-     *            Community which will be added into community.
+     *     Community which will be added into community.
+     * @param user_ip
+     *     User's IP address.
+     * @param user_agent
+     *     User agent string (specifies browser used and its version).
+     * @param xforwardedfor
+     *     When accessed via a reverse proxy, the application sees the proxy's IP as the
+     *     source of the request. The proxy may be configured to add the
+     *     "X-Forwarded-For" HTTP header containing the original IP of the client
+     *     so that the reverse-proxied application can get the client's IP.
      * @param headers
-     *            If you want to access to community under logged user into
-     *            context. In headers must be set header "rest-dspace-token"
-     *            with passed token from login method.
+     *     If you want to access the community as the user logged into the
+     *     context. The value of the "rest-dspace-token" header must be set
+     *     to the token received from the login method response.
+     * @param request
+     *     Servlet's HTTP request object.
      * @return Return response 200 if was everything all right. Otherwise 400
-     *         when id of community was incorrect or 401 if was problem with
-     *         permission to write into collection.
+     *     when id of community was incorrect or 401 if was problem with
+     *     permission to write into collection.
      * @throws WebApplicationException
-     *             It is thrown when was problem with database reading or
-     *             writing. Or problem with authorization to community. Or
-     *             problem with creating context.
+     *     It is thrown when was problem with database reading or
+     *     writing. Or problem with authorization to community. Or
+     *     problem with creating context.
      */
     @POST
     @Path("/{community_id}/communities")
     @Consumes({ MediaType.APPLICATION_JSON, MediaType.APPLICATION_XML })
-    public Community addCommunityCommunity(@PathParam("community_id") Integer communityId, Community community,
+    public Community addCommunityCommunity(@PathParam("community_id") String communityId, Community community,
             @QueryParam("userIP") String user_ip, @QueryParam("userAgent") String user_agent,
             @QueryParam("xforwardedfor") String xforwardedfor, @Context HttpHeaders headers, @Context HttpServletRequest request)
             throws WebApplicationException
@@ -643,23 +722,23 @@ public class CommunitiesResource extends Resource
 
         try
         {
-            context = createContext(getUser(headers));
+            context = createContext();
             org.dspace.content.Community dspaceParentCommunity = findCommunity(context, communityId,
                     org.dspace.core.Constants.WRITE);
 
             writeStats(dspaceParentCommunity, UsageEvent.Action.UPDATE, user_ip, user_agent, xforwardedfor,
                     headers, request, context);
 
-            org.dspace.content.Community dspaceCommunity = org.dspace.content.Community.create(dspaceParentCommunity, context);
-            dspaceCommunity.setMetadata("name", community.getName());
-            dspaceCommunity.setMetadata(org.dspace.content.Community.COPYRIGHT_TEXT, community.getCopyrightText());
-            dspaceCommunity.setMetadata(org.dspace.content.Community.INTRODUCTORY_TEXT, community.getIntroductoryText());
-            dspaceCommunity.setMetadata(org.dspace.content.Community.SHORT_DESCRIPTION, community.getShortDescription());
-            dspaceCommunity.setMetadata(org.dspace.content.Community.SIDEBAR_TEXT, community.getSidebarText());
-            dspaceCommunity.update();
-            dspaceParentCommunity.update();
+            org.dspace.content.Community dspaceCommunity = communityService.createSubcommunity(context, dspaceParentCommunity);
+            communityService.setMetadata(context, dspaceCommunity, "name", community.getName());
+            communityService.setMetadata(context, dspaceCommunity, org.dspace.content.Community.COPYRIGHT_TEXT, community.getCopyrightText());
+            communityService.setMetadata(context, dspaceCommunity, org.dspace.content.Community.INTRODUCTORY_TEXT, community.getIntroductoryText());
+            communityService.setMetadata(context, dspaceCommunity, org.dspace.content.Community.SHORT_DESCRIPTION, community.getShortDescription());
+            communityService.setMetadata(context, dspaceCommunity, org.dspace.content.Community.SIDEBAR_TEXT, community.getSidebarText());
+            communityService.update(context, dspaceCommunity);
+            communityService.update(context, dspaceParentCommunity);
 
-            retCommunity = new Community(dspaceCommunity, "", context);
+            retCommunity = new Community(dspaceCommunity, servletContext, "", context);
             context.complete();
 
         }
@@ -693,25 +772,36 @@ public class CommunitiesResource extends Resource
      * handle and expandle items.
      * 
      * @param communityId
-     *            Id of community in DSpace.
+     *     Id of community in DSpace.
      * @param community
-     *            Instance of community which will replace actual community in
-     *            DSpace.
+     *     Instance of community which will replace actual community in
+     *     DSpace.
+     * @param user_ip
+     *     User's IP address.
+     * @param user_agent
+     *     User agent string (specifies browser used and its version).
+     * @param xforwardedfor
+     *     When accessed via a reverse proxy, the application sees the proxy's IP as the
+     *     source of the request. The proxy may be configured to add the
+     *     "X-Forwarded-For" HTTP header containing the original IP of the client
+     *     so that the reverse-proxied application can get the client's IP.
      * @param headers
-     *            If you want to access to community under logged user into
-     *            context. In headers must be set header "rest-dspace-token"
-     *            with passed token from login method.
-     * @return Response 200 if was all ok. Otherwise 400 if was id incorrect or
-     *         401 if logged user has no permission to delete community.
+     *     If you want to access the community as the user logged into the
+     *     context. The value of the "rest-dspace-token" header must be set
+     *     to the token received from the login method response.
+     * @param request
+     *     Servlet's HTTP request object.
+     * @return Response 200 if was all ok. Otherwise 400 if id was incorrect or
+     *     401 if logged user has no permission to delete community.
      * @throws WebApplicationException
-     *             It is throw when was problem with creating context or problem
-     *             with database reading or writing. Or problem with writing to
-     *             community caused by authorization.
+     *     Thrown if there was a problem with creating context or problem
+     *     with database reading or writing. Or problem with writing to
+     *     community caused by authorization.
      */
     @PUT
     @Path("/{community_id}")
     @Consumes({ MediaType.APPLICATION_JSON, MediaType.APPLICATION_XML })
-    public Response updateCommunity(@PathParam("community_id") Integer communityId, Community community,
+    public Response updateCommunity(@PathParam("community_id") String communityId, Community community,
             @QueryParam("userIP") String user_ip, @QueryParam("userAgent") String user_agent,
             @QueryParam("xforwardedfor") String xforwardedfor, @Context HttpHeaders headers, @Context HttpServletRequest request)
             throws WebApplicationException
@@ -722,20 +812,19 @@ public class CommunitiesResource extends Resource
 
         try
         {
-            context = createContext(getUser(headers));
+            context = createContext();
 
             org.dspace.content.Community dspaceCommunity = findCommunity(context, communityId, org.dspace.core.Constants.WRITE);
             writeStats(dspaceCommunity, UsageEvent.Action.UPDATE, user_ip, user_agent, xforwardedfor,
                     headers, request, context);
 
             // dspaceCommunity.setLogo(arg0); // TODO Add this option.
-            dspaceCommunity.setMetadata("name", community.getName());
-            dspaceCommunity.setMetadata(org.dspace.content.Community.COPYRIGHT_TEXT, community.getCopyrightText());
-            dspaceCommunity.setMetadata(org.dspace.content.Community.INTRODUCTORY_TEXT, community.getIntroductoryText());
-            dspaceCommunity.setMetadata(org.dspace.content.Community.SHORT_DESCRIPTION, community.getShortDescription());
-            dspaceCommunity.setMetadata(org.dspace.content.Community.SIDEBAR_TEXT, community.getSidebarText());
-            dspaceCommunity.update();
-
+            communityService.setMetadata(context, dspaceCommunity, "name", community.getName());
+            communityService.setMetadata(context, dspaceCommunity, org.dspace.content.Community.COPYRIGHT_TEXT, community.getCopyrightText());
+            communityService.setMetadata(context, dspaceCommunity, org.dspace.content.Community.INTRODUCTORY_TEXT, community.getIntroductoryText());
+            communityService.setMetadata(context, dspaceCommunity, org.dspace.content.Community.SHORT_DESCRIPTION, community.getShortDescription());
+            communityService.setMetadata(context, dspaceCommunity, org.dspace.content.Community.SIDEBAR_TEXT, community.getSidebarText());
+            communityService.update(context, dspaceCommunity);
             context.complete();
 
         }
@@ -746,12 +835,9 @@ public class CommunitiesResource extends Resource
         catch (ContextException e)
         {
             processException("Could not update community(id=" + communityId + "), ContextException Message:" + e, context);
-        }
-        catch (AuthorizeException e)
-        {
-            processException("Could not update community(id=" + communityId + "), AuthorizeException. Message:" + e, context);
-        }
-        finally
+        } catch (AuthorizeException e) {
+            processException("Could not update community(id=" + communityId + "), AuthorizeException Message:" + e, context);
+        } finally
         {
             processFinally(context);
         }
@@ -764,22 +850,33 @@ public class CommunitiesResource extends Resource
      * Delete community from DSpace. It delete it everything with community!
      * 
      * @param communityId
-     *            Id of community in DSpace.
+     *     Id of community in DSpace.
+     * @param user_ip
+     *     User's IP address.
+     * @param user_agent
+     *     User agent string (specifies browser used and its version).
+     * @param xforwardedfor
+     *     When accessed via a reverse proxy, the application sees the proxy's IP as the
+     *     source of the request. The proxy may be configured to add the
+     *     "X-Forwarded-For" HTTP header containing the original IP of the client
+     *     so that the reverse-proxied application can get the client's IP.
      * @param headers
-     *            If you want to access to community under logged user into
-     *            context. In headers must be set header "rest-dspace-token"
-     *            with passed token from login method.
+     *     If you want to access the community as the user logged into the
+     *     context. The value of the "rest-dspace-token" header must be set
+     *     to the token received from the login method response.
+     * @param request
+     *     Servlet's HTTP request object.
      * @return Return response code OK(200) if was everything all right.
-     *         Otherwise return NOT_FOUND(404) if was id of community incorrect.
-     *         Or (UNAUTHORIZED)401 if was problem with permission to community.
+     *     Otherwise return NOT_FOUND(404) if was id of community incorrect.
+     *     Or (UNAUTHORIZED)401 if was problem with permission to community.
      * @throws WebApplicationException
-     *             It is throw when was problem with creating context or problem
-     *             with database reading or deleting. Or problem with deleting
-     *             community caused by IOException or authorization.
+     *     Thrown if there was a problem with creating context or problem
+     *     with database reading or deleting. Or problem with deleting
+     *     community caused by IOException or authorization.
      */
     @DELETE
     @Path("/{community_id}")
-    public Response deleteCommunity(@PathParam("community_id") Integer communityId, @QueryParam("userIP") String user_ip,
+    public Response deleteCommunity(@PathParam("community_id") String communityId, @QueryParam("userIP") String user_ip,
             @QueryParam("userAgent") String user_agent, @QueryParam("xforwardedfor") String xforwardedfor,
             @Context HttpHeaders headers, @Context HttpServletRequest request) throws WebApplicationException
     {
@@ -789,13 +886,14 @@ public class CommunitiesResource extends Resource
 
         try
         {
-            context = createContext(getUser(headers));
+            context = createContext();
 
             org.dspace.content.Community community = findCommunity(context, communityId, org.dspace.core.Constants.DELETE);
             writeStats(community, UsageEvent.Action.DELETE, user_ip, user_agent, xforwardedfor, headers,
                     request, context);
 
-            community.delete();
+            communityService.delete(context, community);
+            communityService.update(context, community);
             context.complete();
 
         }
@@ -830,26 +928,37 @@ public class CommunitiesResource extends Resource
      * Delete collection in community.
      * 
      * @param communityId
-     *            Id of community in DSpace.
+     *     Id of community in DSpace.
      * @param collectionId
-     *            Id of collection which will be deleted.
+     *     Id of collection which will be deleted.
+     * @param user_ip
+     *     User's IP address.
+     * @param user_agent
+     *     User agent string (specifies browser used and its version).
+     * @param xforwardedfor
+     *     When accessed via a reverse proxy, the application sees the proxy's IP as the
+     *     source of the request. The proxy may be configured to add the
+     *     "X-Forwarded-For" HTTP header containing the original IP of the client
+     *     so that the reverse-proxied application can get the client's IP.
      * @param headers
-     *            If you want to access to community under logged user into
-     *            context. In headers must be set header "rest-dspace-token"
-     *            with passed token from login method.
+     *     If you want to access the community as the user logged into the
+     *     context. The value of the "rest-dspace-token" header must be set
+     *     to the token received from the login method response.
+     * @param request
+     *     Servlet's HTTP request object.
      * @return Return response code OK(200) if was everything all right.
-     *         Otherwise return NOT_FOUND(404) if was id of community or
-     *         collection incorrect. Or (UNAUTHORIZED)401 if was problem with
-     *         permission to community or collection.
+     *     Otherwise return NOT_FOUND(404) if was id of community or
+     *     collection incorrect. Or (UNAUTHORIZED)401 if was problem with
+     *     permission to community or collection.
      * @throws WebApplicationException
-     *             It is throw when was problem with creating context or problem
-     *             with database reading or deleting. Or problem with deleting
-     *             collection caused by IOException or authorization.
+     *     Thrown if there was a problem with creating context or problem
+     *     with database reading or deleting. Or problem with deleting
+     *     collection caused by IOException or authorization.
      */
     @DELETE
     @Path("/{community_id}/collections/{collection_id}")
-    public Response deleteCommunityCollection(@PathParam("community_id") Integer communityId,
-            @PathParam("collection_id") Integer collectionId, @QueryParam("userIP") String user_ip,
+    public Response deleteCommunityCollection(@PathParam("community_id") String communityId,
+            @PathParam("collection_id") String collectionId, @QueryParam("userIP") String user_ip,
             @QueryParam("userAgent") String user_agent, @QueryParam("xforwardedfor") String xforwardedfor,
             @Context HttpHeaders headers, @Context HttpServletRequest request) throws WebApplicationException
     {
@@ -859,18 +968,10 @@ public class CommunitiesResource extends Resource
 
         try
         {
-            context = createContext(getUser(headers));
+            context = createContext();
 
             org.dspace.content.Community community = findCommunity(context, communityId, org.dspace.core.Constants.WRITE);
-            org.dspace.content.Collection collection = null;
-            for (org.dspace.content.Collection dspaceCollection : community.getAllCollections())
-            {
-                if (dspaceCollection.getID() == collectionId)
-                {
-                    collection = dspaceCollection;
-                    break;
-                }
-            }
+            org.dspace.content.Collection collection = collectionService.findByIdOrLegacyId(context, collectionId);
 
             if (collection == null)
             {
@@ -878,7 +979,7 @@ public class CommunitiesResource extends Resource
                 log.warn("Collection(id=" + collectionId + ") was not found!");
                 throw new WebApplicationException(Response.Status.NOT_FOUND);
             }
-            else if (!AuthorizeManager.authorizeActionBoolean(context, collection, org.dspace.core.Constants.REMOVE))
+            else if (!authorizeService.authorizeActionBoolean(context, collection, org.dspace.core.Constants.REMOVE))
             {
                 context.abort();
                 if (context.getCurrentUser() != null)
@@ -892,12 +993,14 @@ public class CommunitiesResource extends Resource
                 throw new WebApplicationException(Response.Status.UNAUTHORIZED);
             }
 
+            communityService.removeCollection(context, community, collection);
+            communityService.update(context, community);
+            collectionService.update(context, collection);
+
             writeStats(community, UsageEvent.Action.UPDATE, user_ip, user_agent, xforwardedfor, headers,
                     request, context);
             writeStats(collection, UsageEvent.Action.DELETE, user_ip, user_agent, xforwardedfor, headers,
                     request, context);
-
-            community.removeCollection(collection);
 
             context.complete();
 
@@ -936,26 +1039,37 @@ public class CommunitiesResource extends Resource
      * Delete subcommunity in community.
      * 
      * @param parentCommunityId
-     *            Id of community in DSpace.
+     *     Id of community in DSpace.
      * @param subcommunityId
-     *            Id of community which will be deleted.
+     *     Id of community which will be deleted.
+     * @param user_ip
+     *     User's IP address.
+     * @param user_agent
+     *     User agent string (specifies browser used and its version).
+     * @param xforwardedfor
+     *     When accessed via a reverse proxy, the application sees the proxy's IP as the
+     *     source of the request. The proxy may be configured to add the
+     *     "X-Forwarded-For" HTTP header containing the original IP of the client
+     *     so that the reverse-proxied application can get the client's IP.
      * @param headers
-     *            If you want to access to community under logged user into
-     *            context. In headers must be set header "rest-dspace-token"
-     *            with passed token from login method.
+     *     If you want to access the community as the user logged into the
+     *     context. The value of the "rest-dspace-token" header must be set
+     *     to the token received from the login method response.
+     * @param request
+     *     Servlet's HTTP request object.
      * @return Return response code OK(200) if was everything all right.
-     *         Otherwise return NOT_FOUND(404) if was id of community or
-     *         subcommunity incorrect. Or (UNAUTHORIZED)401 if was problem with
-     *         permission to community or subcommunity.
+     *     Otherwise return NOT_FOUND(404) if was id of community or
+     *     subcommunity incorrect. Or (UNAUTHORIZED)401 if was problem with
+     *     permission to community or subcommunity.
      * @throws WebApplicationException
-     *             It is throw when was problem with creating context or problem
-     *             with database reading or deleting. Or problem with deleting
-     *             subcommunity caused by IOException or authorization.
+     *     Thrown if there was a problem with creating context or problem
+     *     with database reading or deleting. Or problem with deleting
+     *     subcommunity caused by IOException or authorization.
      */
     @DELETE
     @Path("/{community_id}/communities/{community_id2}")
-    public Response deleteCommunityCommunity(@PathParam("community_id") Integer parentCommunityId,
-            @PathParam("community_id2") Integer subcommunityId, @QueryParam("userIP") String user_ip,
+    public Response deleteCommunityCommunity(@PathParam("community_id") String parentCommunityId,
+            @PathParam("community_id2") String subcommunityId, @QueryParam("userIP") String user_ip,
             @QueryParam("userAgent") String user_agent, @QueryParam("xforwardedfor") String xforwardedfor,
             @Context HttpHeaders headers, @Context HttpServletRequest request) throws WebApplicationException
     {
@@ -965,19 +1079,11 @@ public class CommunitiesResource extends Resource
 
         try
         {
-            context = createContext(getUser(headers));
+            context = createContext();
 
             org.dspace.content.Community parentCommunity = findCommunity(context, parentCommunityId,
                     org.dspace.core.Constants.WRITE);
-            org.dspace.content.Community subcommunity = null;
-            for (org.dspace.content.Community dspaceCommunity : parentCommunity.getSubcommunities())
-            {
-                if (dspaceCommunity.getID() == subcommunityId)
-                {
-                    subcommunity = dspaceCommunity;
-                    break;
-                }
-            }
+            org.dspace.content.Community subcommunity = communityService.findByIdOrLegacyId(context, subcommunityId);
 
             if (subcommunity == null)
             {
@@ -985,7 +1091,7 @@ public class CommunitiesResource extends Resource
                 log.warn("Subcommunity(id=" + subcommunityId + ") in community(id=" + ") was not found!");
                 throw new WebApplicationException(Response.Status.NOT_FOUND);
             }
-            else if (!AuthorizeManager.authorizeActionBoolean(context, subcommunity, org.dspace.core.Constants.REMOVE))
+            else if (!authorizeService.authorizeActionBoolean(context, subcommunity, org.dspace.core.Constants.REMOVE))
             {
                 context.abort();
                 if (context.getCurrentUser() != null)
@@ -999,12 +1105,15 @@ public class CommunitiesResource extends Resource
                 throw new WebApplicationException(Response.Status.UNAUTHORIZED);
             }
 
+            communityService.removeSubcommunity(context, parentCommunity, subcommunity);
+            communityService.update(context, parentCommunity);
+            communityService.update(context, subcommunity);
+
             writeStats(parentCommunity, UsageEvent.Action.UPDATE, user_ip, user_agent, xforwardedfor,
                     headers, request, context);
             writeStats(subcommunity, UsageEvent.Action.DELETE, user_ip, user_agent, xforwardedfor, headers,
                     request, context);
 
-            parentCommunity.removeSubcommunity(subcommunity);
             context.complete();
 
         }
@@ -1026,7 +1135,7 @@ public class CommunitiesResource extends Resource
         catch (ContextException e)
         {
             processException("Could not delete subcommunity(id=" + subcommunityId + ") in community(id=" + parentCommunityId
-                    + "), ContextExcpetion. Message:" + e.getMessage(), context);
+                    + "), ContextException. Message:" + e.getMessage(), context);
         }
         finally
         {
@@ -1044,23 +1153,23 @@ public class CommunitiesResource extends Resource
      * logged into context has permission to do passed action.
      * 
      * @param context
-     *            Context of actual logged user.
+     *     Context of actual logged user.
      * @param id
-     *            Id of community in DSpace.
+     *     Id of community in DSpace.
      * @param action
-     *            Constant from org.dspace.core.Constants.
+     *     Constant from org.dspace.core.Constants.
      * @return It returns DSpace collection.
      * @throws WebApplicationException
-     *             Is thrown when item with passed id is not exists and if user
-     *             has no permission to do passed action.
+     *     Is thrown when item with passed id is not exists and if user
+     *     has no permission to do passed action.
      */
-    private org.dspace.content.Community findCommunity(org.dspace.core.Context context, int id, int action)
+    private org.dspace.content.Community findCommunity(org.dspace.core.Context context, String id, int action)
             throws WebApplicationException
     {
         org.dspace.content.Community community = null;
         try
         {
-            community = org.dspace.content.Community.find(context, id);
+            community = communityService.findByIdOrLegacyId(context, id);
 
             if (community == null)
             {
@@ -1068,7 +1177,7 @@ public class CommunitiesResource extends Resource
                 log.warn("Community(id=" + id + ") was not found!");
                 throw new WebApplicationException(Response.Status.NOT_FOUND);
             }
-            else if (!AuthorizeManager.authorizeActionBoolean(context, community, action))
+            else if (!authorizeService.authorizeActionBoolean(context, community, action))
             {
                 context.abort();
                 if (context.getCurrentUser() != null)

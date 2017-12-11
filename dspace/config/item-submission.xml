@@ -18,6 +18,7 @@
 	<!-- for handle "default". -->
 	<submission-map>
 		<name-map collection-handle="default" submission-name="traditional" />
+<<<<<<< HEAD
 		<!-- Added custom submission process to collection "OMALS", http://vtechworks.lib.vt.edu/handle/10919/51287 -->
 		<name-map collection-handle="10919/51287" submission-name="omals" />
 		<!-- Added custom submission process to collection "NDLTD", http://vtechworks.lib.vt.edu/handle/10919/18725 -->
@@ -25,6 +26,8 @@
 		<!-- Custom submission process for VT ETDs, both Masters and Doctoral submissions-->
 		<name-map collection-handle="10919/9291" submission-name="vtetd" />
 		<name-map collection-handle="10919/11041" submission-name="vtetd" />
+=======
+>>>>>>> aaafc1887bc2e36d28f8d9c37ba8cac67a059689
 	</submission-map>
 
 
@@ -47,6 +50,7 @@
 	<!-- -->
 	<!-- The following properties are OPTIONAL for each <step>: -->
 	<!-- <heading> - References the message key, from the -->
+<<<<<<< HEAD
 	<!-- Messages.properties file (JSP-UI) or messages.xml -->
 	<!-- (XML-UI) which will be used as this step's heading in -->
 	<!-- the progress-bar. If unspecified, the step does not -->
@@ -119,13 +123,73 @@
 			<jspui-binding>org.dspace.app.webui.submit.step.JSPCompleteStep</jspui-binding>
 			<workflow-editable>false</workflow-editable>
 		</step>
+=======
+	<!-- Messages.properties -->
+	<!-- -->
+	<step-definitions>
+
+		<step id="traditionalpageone" mandatory="true">
+			<heading>submit.progressbar.describe.stepone</heading>
+			<processing-class>org.dspace.submit.step.DescribeStep</processing-class>
+			<type>submission-form</type>
+		</step>
+		<step id="traditionalpagetwo" mandatory="true">
+			<heading>submit.progressbar.describe.steptwo</heading>
+			<processing-class>org.dspace.submit.step.DescribeStep</processing-class>
+			<type>submission-form</type>
+		</step>
+		<step id="upload">
+			<heading>submit.progressbar.upload</heading>
+			<processing-class>org.dspace.submit.step.UploadStep</processing-class>
+			<type>upload</type>
+		</step>
+		<step id="license">
+			<heading>submit.progressbar.license</heading>
+			<processing-class>org.dspace.submit.step.LicenseStep</processing-class>
+			<type>license</type>
+			<scope visibilityOutside="read-only">submission</scope>
+		</step>
+
+		<!-- Step Upload Item with Embargo Features to enable this step, please 
+			make sure to comment-out the previous step "UploadStep" <step id="upload-with-embargo"> 
+			<heading>submit.progressbar.upload</heading> <processing-class>org.dspace.submit.step.UploadWithEmbargoStep</processing-class> 
+			<type>uploadWithEmbargo</type> </step> -->
+
+
+		<!--Step will be to select a Creative Commons License -->
+		<!-- Uncomment this step to allow the user to select a Creative Commons 
+			license -->
+		<!-- <step id="creative-commons"> <heading>submit.progressbar.CClicense</heading> 
+			<processing-class>org.dspace.submit.step.CCLicenseStep</processing-class> 
+			<type>cclicense</type> </step> -->
+
+		<!--Step will be to Check for potential duplicate -->
+		<!-- <step id="detect-duplicate"> <heading>submit.progressbar.detect.duplicate</heading> 
+			<processing-class>org.dspace.submit.step.DetectPotentialDuplicate</processing-class> 
+			<type>duplicate</type> </step> -->
+
+		<!--Step will be to Verify/Review everything -->
+		<!-- <step id="verify"> <heading>submit.progressbar.verify</heading> <processing-class>org.dspace.submit.step.VerifyStep</processing-class> 
+			<type>verify</type> </step> -->
+
+		<!-- Fake Steps to test parsing of all options -->
+		<!-- <step mandatory="false"> <heading>fake.submission.readonly</heading> 
+			<processing-class>org.dspace.submit.step.SampleStep</processing-class> <type>sample</type> 
+			<scope visibility="read-only">submission</scope> </step> <step mandatory="false"> 
+			<heading>fake.workflow.readonly</heading> <processing-class>org.dspace.submit.step.SampleStep</processing-class> 
+			<type>sample</type> <scope visibility="read-only">workflow</scope> </step> -->
+>>>>>>> aaafc1887bc2e36d28f8d9c37ba8cac67a059689
 
 		<!-- This is the Sample Step which utilizes the JSPSampleStep class -->
 		<step id="sample">
 			<heading>Sample</heading>
 			<processing-class>org.dspace.submit.step.SampleStep</processing-class>
+<<<<<<< HEAD
 			<jspui-binding>org.dspace.app.webui.submit.step.JSPSampleStep</jspui-binding>
 			<workflow-editable>true</workflow-editable>
+=======
+			<type>sample</type>
+>>>>>>> aaafc1887bc2e36d28f8d9c37ba8cac67a059689
 		</step>
 	</step-definitions>
 
@@ -139,6 +203,7 @@
 	<!-- -->
 	<!-- Each submit-process contains an ordered set of steps; each step -->
 	<!-- defines one "step" occurring during the process of submitting an -->
+<<<<<<< HEAD
 	<!-- item. A step can either be referenced by 'id' (in which case it must -->
 	<!-- be defined in <step-definitions> above), or defined completely here. -->
 	<!-- -->
@@ -181,6 +246,11 @@
 	<!-- defaults to TRUE (which means it can be edited during -->
 	<!-- the "Edit Metadata" workflow stage). Set to either -->
 	<!-- "true" or "false". -->
+=======
+	<!-- item. A step MUST be referenced by 'id' (it must -->
+	<!-- be defined in <step-definitions> above). -->
+	<!-- -->
+>>>>>>> aaafc1887bc2e36d28f8d9c37ba8cac67a059689
 	<!-- -->
 	<submission-definitions>
 
@@ -190,6 +260,7 @@
 			<!--Uncommment to display the SAMPLE step as your first step -->
 			<!--<step id="sample"/> -->
 
+<<<<<<< HEAD
 			<!-- Step 1. Since DSpace 4.0, the initial questions has been disabled. 
 				Metadata are shown exactly as required in input-forms and items are assumed 
 				to have always multiple-files attached. If re-enable the initial questions 
@@ -540,6 +611,21 @@
 				<xmlui-binding>org.dspace.app.xmlui.aspect.submission.submit.LicenseStep</xmlui-binding>
 				<workflow-editable>false</workflow-editable>
 			</step>
+=======
+			<!--Step will be to Describe the item. -->
+			<step id="traditionalpageone" />
+			<step id="traditionalpagetwo" />
+
+			<!--Step will be to Upload the item -->
+			<step id="upload" />
+			<!-- <step id="upload-with-embargo"/> -->
+			<!-- <step id="detect-duplicate"/> -->
+
+			<!--Step will be to Sign off on the License -->
+			<step id="license" />
+			<!-- <step id="creative-commons"/> -->
+			<!-- <step id="verify"/> -->
+>>>>>>> aaafc1887bc2e36d28f8d9c37ba8cac67a059689
 		</submission-process>
 
 	</submission-definitions>

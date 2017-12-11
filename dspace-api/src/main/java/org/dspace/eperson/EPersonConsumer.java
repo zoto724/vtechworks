@@ -9,11 +9,14 @@ package org.dspace.eperson;
 
 import org.apache.log4j.Logger;
 import org.dspace.core.*;
+import org.dspace.eperson.factory.EPersonServiceFactory;
+import org.dspace.eperson.service.EPersonService;
 import org.dspace.event.Consumer;
 import org.dspace.event.Event;
 
 import javax.mail.MessagingException;
 import java.util.Date;
+import java.util.UUID;
 
 /**
  * Class for handling updates to EPersons
@@ -29,11 +32,14 @@ public class EPersonConsumer implements Consumer
     /** log4j logger */
     private static Logger log = Logger.getLogger(EPersonConsumer.class);
 
+    protected EPersonService ePersonService = EPersonServiceFactory.getInstance().getEPersonService();
+
     /**
      * Initalise the consumer
      *
-     * @throws Exception
+     * @throws Exception if error
      */
+    @Override
     public void initialize()
         throws Exception
     {
@@ -44,15 +50,18 @@ public class EPersonConsumer implements Consumer
      * Consume the event
      *
      * @param context
+     *     The relevant DSpace Context.
      * @param event
-     * @throws Exception
+     *     Which Event to consume
+     * @throws Exception if error
      */
+    @Override
     public void consume(Context context, Event event)
         throws Exception
     {
         int st = event.getSubjectType();
         int et = event.getEventType();
-        int id = event.getSubjectID();
+        UUID id = event.getSubjectID();
 
         switch (st)
         {
@@ -71,7 +80,7 @@ public class EPersonConsumer implements Consumer
                     {
                         try
                         {
-                            EPerson eperson = EPerson.find(context, id);
+                            EPerson eperson = ePersonService.find(context, id);
                             Email adminEmail = Email.getEmail(I18nUtil.getEmailFilename(context.getCurrentLocale(), "registration_notify"));
                             adminEmail.addRecipient(notifyRecipient);
 
@@ -109,8 +118,10 @@ public class EPersonConsumer implements Consumer
      * Handle the end of the event
      *
      * @param ctx
-     * @throws Exception
+     *     The relevant DSpace Context.
+     * @throws Exception if error
      */
+    @Override
     public void end(Context ctx)
         throws Exception
     {
@@ -121,7 +132,9 @@ public class EPersonConsumer implements Consumer
      * Finish the event
      *
      * @param ctx
+     *     The relevant DSpace Context.
      */
+    @Override
     public void finish(Context ctx)
     {
 

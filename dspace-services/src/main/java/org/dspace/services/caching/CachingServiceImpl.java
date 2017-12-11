@@ -22,7 +22,6 @@ import java.util.concurrent.ConcurrentHashMap;
 import net.sf.ehcache.CacheManager;
 import net.sf.ehcache.Ehcache;
 import net.sf.ehcache.Statistics;
-
 import org.dspace.kernel.ServiceManager;
 import org.dspace.kernel.mixins.ConfigChangeListener;
 import org.dspace.kernel.mixins.InitializedService;
@@ -34,8 +33,10 @@ import org.dspace.services.ConfigurationService;
 import org.dspace.services.RequestService;
 import org.dspace.services.caching.model.EhcacheCache;
 import org.dspace.services.caching.model.MapCache;
-import org.dspace.services.model.*;
+import org.dspace.services.model.Cache;
+import org.dspace.services.model.CacheConfig;
 import org.dspace.services.model.CacheConfig.CacheScope;
+import org.dspace.services.model.RequestInterceptor;
 import org.dspace.utils.servicemanager.ProviderHolder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -141,11 +142,12 @@ public final class CachingServiceImpl implements CachingService, InitializedServ
      * Reloads the config settings from the configuration service.
      */
     protected void reloadConfig() {
-        useClustering = configurationService.getPropertyAsType(knownConfigNames[0], boolean.class);
-        useDiskStore = configurationService.getPropertyAsType(knownConfigNames[1], boolean.class);
-        maxElementsInMemory = configurationService.getPropertyAsType(knownConfigNames[2], int.class);
-        timeToLiveSecs = configurationService.getPropertyAsType(knownConfigNames[3], int.class);
-        timeToIdleSecs = configurationService.getPropertyAsType(knownConfigNames[4], int.class);
+        // Reload caching configurations, but have sane default values if unspecified in configs
+        useClustering = configurationService.getPropertyAsType(knownConfigNames[0], false);
+        useDiskStore = configurationService.getPropertyAsType(knownConfigNames[1], true);
+        maxElementsInMemory = configurationService.getPropertyAsType(knownConfigNames[2], 2000);
+        timeToLiveSecs = configurationService.getPropertyAsType(knownConfigNames[3], 3600);
+        timeToIdleSecs = configurationService.getPropertyAsType(knownConfigNames[4], 600);
     }
 
     /**
@@ -625,7 +627,7 @@ public final class CachingServiceImpl implements CachingService, InitializedServ
 
     private class CachingServiceRequestInterceptor implements RequestInterceptor {
 
-        public void onStart(String requestId, Session session) {
+        public void onStart(String requestId) {
             if (requestId != null) {
                 Map<String, MapCache> requestCaches = requestCachesMap.get(requestId);
                 if (requestCaches == null) {
@@ -635,7 +637,7 @@ public final class CachingServiceImpl implements CachingService, InitializedServ
             }
         }
 
-        public void onEnd(String requestId, Session session, boolean succeeded, Exception failure) {
+        public void onEnd(String requestId, boolean succeeded, Exception failure) {
             if (requestId != null) {
                 requestCachesMap.remove(requestId);
             }

@@ -38,7 +38,7 @@ public class CiNiiService
     /** log4j category */
     private static final Logger log = Logger.getLogger(CiNiiService.class);
 
-    private int timeout = 1000;
+    protected int timeout = 1000;
 
     public void setTimeout(int timeout)
     {
@@ -76,8 +76,17 @@ public class CiNiiService
     /**
      * Get metadata by searching CiNii RDF API with CiNii NAID
      *
+     * @param id
+     *     CiNii NAID to search by
+     * @param appId
+     *     registered application identifier for the API
+     * @return record metadata
+     * @throws IOException
+     *     A general class of exceptions produced by failed or interrupted I/O operations.
+     * @throws HttpException
+     *     Represents a XML/HTTP fault and provides access to the HTTP status code.
      */
-    private Record search(String id, String appId)
+    protected Record search(String id, String appId)
         throws IOException, HttpException
     {
         HttpGet method = null;
@@ -133,8 +142,23 @@ public class CiNiiService
     /**
      * Get CiNii NAIDs by searching CiNii OpenURL API with title, author and year
      *
+     * @param title
+     *     record title
+     * @param author
+     *     record author
+     * @param year
+     *     record year
+     * @param maxResults
+     *     maximun number of results returned
+     * @param appId
+     *     registered application identifier for the API
+     * @return matching NAIDs
+     * @throws IOException
+     *     A general class of exceptions produced by failed or interrupted I/O operations.
+     * @throws HttpException
+     *     Represents a XML/HTTP fault and provides access to the HTTP status code.
      */
-    private  List<String> getCiNiiIDs(String title, String author, int year, 
+    protected List<String> getCiNiiIDs(String title, String author, int year,
         int maxResults, String appId) 
         throws IOException, HttpException
     {

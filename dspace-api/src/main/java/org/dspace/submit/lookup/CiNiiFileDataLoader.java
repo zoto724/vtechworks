@@ -22,7 +22,6 @@ import javax.xml.parsers.ParserConfigurationException;
 
 import org.apache.commons.lang.StringUtils;
 import org.apache.log4j.Logger;
-import org.dspace.app.util.XMLUtils;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 import org.xml.sax.SAXException;
@@ -57,6 +56,7 @@ public class CiNiiFileDataLoader extends FileDataLoader
 
     /**
      * @param filename
+     *     Name of file to load CiNii data from.
      */
     public CiNiiFileDataLoader(String filename)
     {
@@ -64,9 +64,9 @@ public class CiNiiFileDataLoader extends FileDataLoader
     }
 
     /*
-     * (non-Javadoc)
-     * 
-     * @see gr.ekt.bte.core.DataLoader#getRecords()
+     * {@see gr.ekt.bte.core.DataLoader#getRecords()}
+     *
+     * @throws MalformedSourceException 
      */
     @Override
     public RecordSet getRecords() throws MalformedSourceException

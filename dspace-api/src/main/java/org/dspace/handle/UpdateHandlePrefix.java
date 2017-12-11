@@ -7,14 +7,29 @@
  */
 package org.dspace.handle;
 
+import org.apache.log4j.Logger;
+import org.dspace.content.MetadataValue;
+import org.dspace.content.factory.ContentServiceFactory;
+import org.dspace.content.service.MetadataValueService;
+import org.dspace.core.Context;
+import org.dspace.discovery.IndexClient;
+import org.dspace.handle.factory.HandleServiceFactory;
+import org.dspace.handle.service.HandleService;
+import org.dspace.services.ConfigurationService;
+import org.dspace.services.factory.DSpaceServicesFactory;
+
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.sql.SQLException;
+<<<<<<< HEAD
 import org.apache.log4j.Logger;
 import org.dspace.core.Context;
 import org.dspace.storage.rdbms.DatabaseManager;
 import org.dspace.storage.rdbms.TableRow;
 import org.dspace.discovery.IndexClient;
+=======
+import java.util.Iterator;
+>>>>>>> aaafc1887bc2e36d28f8d9c37ba8cac67a059689
 
 /**
  * A script to update the handle values in the database. This is typically used
@@ -28,12 +43,20 @@ public class UpdateHandlePrefix
 {
 
     private static final Logger log = Logger.getLogger(UpdateHandlePrefix.class);
+<<<<<<< HEAD
+=======
+    private static final ConfigurationService configurationService = DSpaceServicesFactory.getInstance().getConfigurationService();
+>>>>>>> aaafc1887bc2e36d28f8d9c37ba8cac67a059689
 
     /**
      * When invoked as a command-line tool, updates handle prefix
      *
      * @param args the command-line arguments, none used
+<<<<<<< HEAD
      * @throws java.lang.Exception
+=======
+     * @throws Exception on generic exception
+>>>>>>> aaafc1887bc2e36d28f8d9c37ba8cac67a059689
      *
      */
     public static void main(String[] args) throws Exception
@@ -46,17 +69,27 @@ public class UpdateHandlePrefix
         }
         else
         {
+<<<<<<< HEAD
+=======
+            HandleService handleService = HandleServiceFactory.getInstance().getHandleService();
+  
+>>>>>>> aaafc1887bc2e36d28f8d9c37ba8cac67a059689
             String oldH = args[0];
             String newH = args[1];
 
             // Get info about changes
             System.out.println("\nGetting information about handles from database...");
             Context context = new Context();
+<<<<<<< HEAD
             String sql = "SELECT count(*) as count " +
                          "FROM handle " +
                          "WHERE handle LIKE '" + oldH + "%'";
             TableRow row = DatabaseManager.querySingle(context, sql, new Object[] {});
             long count = row.getLongColumn("count");
+=======
+
+            long count = handleService.countHandlesByPrefix(context, oldH);
+>>>>>>> aaafc1887bc2e36d28f8d9c37ba8cac67a059689
 
             if (count > 0)
             {
@@ -78,20 +111,29 @@ public class UpdateHandlePrefix
 
                 if (choiceString.equalsIgnoreCase("y"))
                 {
+<<<<<<< HEAD
+=======
+                    context.turnOffAuthorisationSystem();
+>>>>>>> aaafc1887bc2e36d28f8d9c37ba8cac67a059689
                     try {
                         log.info("Updating handle prefix from " + oldH + " to " + newH);
 
                         // Make the changes
                         System.out.print("\nUpdating handle table... ");
+<<<<<<< HEAD
                         sql = "UPDATE handle " +
                               "SET handle = '" + newH + "' || '/' || handle_id " +
                               "WHERE handle like '" + oldH + "/%'";
                         int updHdl = DatabaseManager.updateQuery(context, sql, new Object[] {});
+=======
+                        int updHdl = handleService.updateHandlesWithNewPrefix(context, newH, oldH);
+>>>>>>> aaafc1887bc2e36d28f8d9c37ba8cac67a059689
                         System.out.println(
                           updHdl + " item" + ((updHdl > 1) ? "s" : "") + " updated"
                         );
 
                         System.out.print("Updating metadatavalues table... ");
+<<<<<<< HEAD
                         sql = "UPDATE metadatavalue " +
                               "SET text_value = " +
                                 "(" +
@@ -113,6 +155,26 @@ public class UpdateHandlePrefix
                           updMeta + " metadata value" + ((updMeta > 1) ? "s" : "") + " updated"
                         );
 
+=======
+                        MetadataValueService metadataValueService = ContentServiceFactory.getInstance().getMetadataValueService();
+
+                        String handlePrefix = configurationService.getProperty("handle.canonical.prefix");
+                        Iterator<MetadataValue> metadataValues = metadataValueService.findByValueLike(context, handlePrefix + oldH);
+
+                        int updMeta = 0;
+                        while(metadataValues.hasNext()) {
+                            MetadataValue metadataValue = metadataValues.next();
+                            metadataValue.setValue(metadataValue.getValue().replace(handlePrefix + oldH, handlePrefix + newH));
+                            metadataValueService.update(context, metadataValue, true);
+                            context.uncacheEntity(metadataValue);
+                            updMeta++;
+                        }
+
+                        System.out.println(
+                          updMeta + " metadata value" + ((updMeta > 1) ? "s" : "") + " updated"
+                        );
+                        
+>>>>>>> aaafc1887bc2e36d28f8d9c37ba8cac67a059689
                         // Commit the changes
                         context.complete();
 
@@ -150,6 +212,7 @@ public class UpdateHandlePrefix
                         // Not a lot we can do
                         System.out.println("Error during re-indexing.");
                         System.out.println(
+<<<<<<< HEAD
                           "\n\nAutomatic re-indexing failed. Please perform it manually.\n" +
                           "You should run one of the following commands:\n\n" +
                           "  [dspace]/bin/dspace index-discovery -b\n\n" +
@@ -161,6 +224,15 @@ public class UpdateHandlePrefix
                         );
                         throw e;
                     }
+=======
+                          "\n\nAutomatic re-indexing failed. Please perform it manually.\n\n" +
+                          "  [dspace]/bin/dspace index-discovery -b\n\n" +
+                          "When launching this command, your servlet container must be running.\n"
+                        );
+                        throw e;
+                    }
+                    context.restoreAuthSystemState();
+>>>>>>> aaafc1887bc2e36d28f8d9c37ba8cac67a059689
                 }
                 else
                 {

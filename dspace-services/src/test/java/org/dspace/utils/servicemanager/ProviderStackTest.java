@@ -17,7 +17,7 @@ import java.util.Map;
 import org.dspace.kernel.ServiceManager;
 import org.dspace.kernel.mixins.OrderedService;
 import org.junit.Test;
-
+import org.springframework.context.ConfigurableApplicationContext;
 
 /**
  * Tests the usage of the provider stack
@@ -60,6 +60,11 @@ public class ProviderStackTest {
             public <T> T getServiceByName(String name, Class<T> type) {
                 return null;
             }
+
+            public ConfigurableApplicationContext getApplicationContext() {
+                return null;
+            }
+
             public <T> List<T> getServicesByType(Class<T> type) {
                 return new ArrayList<T>();
             }
@@ -69,10 +74,16 @@ public class ProviderStackTest {
             public boolean isServiceExists(String name) {
                 return false;
             }
-            public void pushConfig(Map<String, String> settings) {
+            public void pushConfig(Map<String, Object> settings) {
             }
             public void registerService(String name, Object service) {
             }
+
+            @Override
+            public void registerServiceNoAutowire(String name, Object service) {
+
+            }
+
             public <T> T registerServiceClass(String name, Class<T> type) {
                 return null;
             }

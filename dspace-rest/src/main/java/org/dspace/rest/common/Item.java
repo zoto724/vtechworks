@@ -8,12 +8,18 @@
 package org.dspace.rest.common;
 
 import org.apache.log4j.Logger;
-import org.dspace.app.util.MetadataExposure;
-import org.dspace.authorize.AuthorizeManager;
+import org.dspace.app.util.factory.UtilServiceFactory;
+import org.dspace.app.util.service.MetadataExposureService;
+import org.dspace.authorize.factory.AuthorizeServiceFactory;
+import org.dspace.authorize.service.AuthorizeService;
 import org.dspace.content.Bundle;
-import org.dspace.content.Metadatum;
+import org.dspace.content.MetadataField;
+import org.dspace.content.MetadataValue;
+import org.dspace.content.factory.ContentServiceFactory;
+import org.dspace.content.service.ItemService;
 import org.dspace.core.Context;
 
+import javax.servlet.ServletContext;
 import javax.ws.rs.WebApplicationException;
 import javax.xml.bind.annotation.XmlElement;
 import javax.xml.bind.annotation.XmlRootElement;
@@ -33,6 +39,10 @@ import java.util.List;
 @SuppressWarnings("deprecation")
 @XmlRootElement(name = "item")
 public class Item extends DSpaceObject {
+    protected ItemService itemService = ContentServiceFactory.getInstance().getItemService();
+    protected MetadataExposureService metadataExposureService = UtilServiceFactory.getInstance().getMetadataExposureService();
+    protected AuthorizeService authorizeService = AuthorizeServiceFactory.getInstance().getAuthorizeService();
+
     Logger log = Logger.getLogger(Item.class);
 
     String isArchived;
@@ -47,26 +57,44 @@ public class Item extends DSpaceObject {
 
     public Item(){}
 
-    public Item(org.dspace.content.Item item, String expand, Context context) throws SQLException, WebApplicationException{
-        super(item);
-        setup(item, expand, context);
+    public Item(org.dspace.content.Item item, ServletContext servletContext, String expand, Context context)
+        throws SQLException, WebApplicationException
+    {
+        super(item, servletContext);
+        setup(item, servletContext, expand, context);
     }
 
-    private void setup(org.dspace.content.Item item, String expand, Context context) throws SQLException{
+    private void setup(org.dspace.content.Item item, ServletContext servletContext, String expand, Context context)
+        throws SQLException
+    {
         List<String> expandFields = new ArrayList<String>();
-        if(expand != null) {
+        if (expand != null)
+        {
             expandFields = Arrays.asList(expand.split(","));
         }
 
-        if(expandFields.contains("metadata") || expandFields.contains("all")) {
+        if (expandFields.contains("metadata") || expandFields.contains("all"))
+        {
             metadata = new ArrayList<MetadataEntry>();
-            Metadatum[] dcvs = item.getMetadata(org.dspace.content.Item.ANY, org.dspace.content.Item.ANY, org.dspace.content.Item.ANY, org.dspace.content.Item.ANY);
-            for (Metadatum dcv : dcvs) {
-                if (!MetadataExposure.isHidden(context, dcv.schema, dcv.element, dcv.qualifier)) {
-                    metadata.add(new MetadataEntry(dcv.getField(), dcv.value, dcv.language));
+            List<MetadataValue> metadataValues = itemService.getMetadata(
+                item, org.dspace.content.Item.ANY, org.dspace.content.Item.ANY,
+                org.dspace.content.Item.ANY, org.dspace.content.Item.ANY);
+
+            for (MetadataValue metadataValue : metadataValues)
+            {
+                MetadataField metadataField = metadataValue.getMetadataField();
+                if (!metadataExposureService.isHidden(context,
+                    metadataField.getMetadataSchema().getName(),
+                    metadataField.getElement(),
+                    metadataField.getQualifier()))
+                {
+                    metadata.add(new MetadataEntry(metadataField.toString('.'),
+                        metadataValue.getValue(), metadataValue.getLanguage()));
                 }
             }
-        } else {
+        }
+        else
+        {
             this.addExpand("metadata");
         }
 
@@ -74,49 +102,79 @@ public class Item extends DSpaceObject {
         this.setWithdrawn(Boolean.toString(item.isWithdrawn()));
         this.setLastModified(item.getLastModified().toString());
 
-        if(expandFields.contains("parentCollection") || expandFields.contains("all")) {
-            this.parentCollection = new Collection(item.getOwningCollection(), null, context, null, null);
-        } else {
+        if (expandFields.contains("parentCollection") || expandFields.contains("all"))
+        {
+            if (item.getOwningCollection() != null)
+            {
+                this.parentCollection = new Collection(item.getOwningCollection(),
+                    servletContext, null, context, null, null);
+            }
+            else
+            {
+                this.addExpand("parentCollection");
+            }
+        }
+        else
+        {
             this.addExpand("parentCollection");
         }
 
-        if(expandFields.contains("parentCollectionList") || expandFields.contains("all")) {
+        if (expandFields.contains("parentCollectionList") || expandFields.contains("all"))
+        {
             this.parentCollectionList = new ArrayList<Collection>();
-            org.dspace.content.Collection[] collections = item.getCollections();
-            for(org.dspace.content.Collection collection : collections) {
-                this.parentCollectionList.add(new Collection(collection, null, context, null, null));
+            List<org.dspace.content.Collection> collections = item.getCollections();
+            for (org.dspace.content.Collection collection : collections)
+            {
+                this.parentCollectionList.add(new Collection(collection,
+                    servletContext, null, context, null, null));
             }
-        } else {
+        }
+        else
+        {
             this.addExpand("parentCollectionList");
         }
 
-        if(expandFields.contains("parentCommunityList") || expandFields.contains("all")) {
+        if (expandFields.contains("parentCommunityList") || expandFields.contains("all"))
+        {
             this.parentCommunityList = new ArrayList<Community>();
-            org.dspace.content.Community[] communities = item.getCommunities();
-            for(org.dspace.content.Community community : communities) {
-                this.parentCommunityList.add(new Community(community, null, context));
+            List<org.dspace.content.Community> communities = itemService.getCommunities(context, item);
+
+            for (org.dspace.content.Community community : communities)
+            {
+                this.parentCommunityList.add(new Community(community, servletContext, null, context));
             }
-        } else {
+        }
+        else
+        {
             this.addExpand("parentCommunityList");
         }
 
         //TODO: paging - offset, limit
-        if(expandFields.contains("bitstreams") || expandFields.contains("all")) {
+        if (expandFields.contains("bitstreams") || expandFields.contains("all"))
+        {
             bitstreams = new ArrayList<Bitstream>();
-            Bundle[] bundles = item.getBundles();
-            for(Bundle bundle : bundles) {
-                org.dspace.content.Bitstream[] itemBitstreams = bundle.getBitstreams();
-                for(org.dspace.content.Bitstream itemBitstream : itemBitstreams) {
-                    if(AuthorizeManager.authorizeActionBoolean(context, itemBitstream, org.dspace.core.Constants.READ)) {
-                        bitstreams.add(new Bitstream(itemBitstream, null));
+
+            List<Bundle> bundles = item.getBundles();
+            for (Bundle bundle : bundles)
+            {
+
+                List<org.dspace.content.Bitstream> itemBitstreams = bundle.getBitstreams();
+                for (org.dspace.content.Bitstream itemBitstream : itemBitstreams)
+                {
+                    if (authorizeService.authorizeActionBoolean(context, itemBitstream, org.dspace.core.Constants.READ))
+                    {
+                        bitstreams.add(new Bitstream(itemBitstream, servletContext, null, context));
                     }
                 }
             }
-        } else {
+        }
+        else
+        {
             this.addExpand("bitstreams");
         }
 
-        if(!expandFields.contains("all")) {
+        if (!expandFields.contains("all"))
+        {
             this.addExpand("all");
         }
     }
@@ -165,24 +223,24 @@ public class Item extends DSpaceObject {
         return parentCommunityList;
     }
 
-	public void setParentCollection(Collection parentCollection) {
-		this.parentCollection = parentCollection;
-	}
+    public void setParentCollection(Collection parentCollection) {
+        this.parentCollection = parentCollection;
+    }
 
-	public void setParentCollectionList(List<Collection> parentCollectionList) {
-		this.parentCollectionList = parentCollectionList;
-	}
+    public void setParentCollectionList(List<Collection> parentCollectionList) {
+        this.parentCollectionList = parentCollectionList;
+    }
 
-	public void setParentCommunityList(List<Community> parentCommunityList) {
-		this.parentCommunityList = parentCommunityList;
-	}
+    public void setParentCommunityList(List<Community> parentCommunityList) {
+        this.parentCommunityList = parentCommunityList;
+    }
 
-	@XmlElement(required = true)
-	public void setMetadata(List<MetadataEntry> metadata) {
-		this.metadata = metadata;
-	}
+    @XmlElement(required = true)
+    public void setMetadata(List<MetadataEntry> metadata) {
+        this.metadata = metadata;
+    }
 
-	public void setBitstreams(List<Bitstream> bitstreams) {
-		this.bitstreams = bitstreams;
-	}
+    public void setBitstreams(List<Bitstream> bitstreams) {
+        this.bitstreams = bitstreams;
+    }
 }

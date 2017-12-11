@@ -16,7 +16,7 @@ import org.apache.log4j.Logger;
 import org.dspace.core.Context;
 import org.dspace.xoai.exceptions.InvalidMetadataFieldException;
 import org.dspace.xoai.services.api.config.ConfigurationService;
-import org.dspace.xoai.services.api.database.EarliestDateResolver;
+import org.dspace.xoai.services.api.EarliestDateResolver;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
 
@@ -30,8 +30,8 @@ import java.util.List;
 
 /**
  * 
- * @author Lyncode Development Team <dspace@lyncode.com>
- * @author Domingo Iglesias <diglesias@ub.edu>
+ * @author Lyncode Development Team (dspace at lyncode dot com)
+ * @author Domingo Iglesias (diglesias at ub dot edu)
  */
 public class DSpaceRepositoryConfiguration implements RepositoryConfiguration
 {
@@ -74,9 +74,15 @@ public class DSpaceRepositoryConfiguration implements RepositoryConfiguration
         HttpServletRequest request = ((ServletRequestAttributes) RequestContextHolder.currentRequestAttributes()).getRequest();
         if (baseUrl == null)
         {
+<<<<<<< HEAD
             baseUrl = configurationService.getProperty("oai", "dspace.oai.url");
             if (baseUrl == null) {
                 log.warn("{ OAI 2.0 :: DSpace } Not able to retrieve the dspace.oai.url property from oai.cfg. Falling back to request address");
+=======
+            baseUrl = configurationService.getProperty("oai.url");
+            if (baseUrl == null) {
+                log.warn("{ OAI 2.0 :: DSpace } Not able to retrieve the oai.url property from oai.cfg. Falling back to request address");
+>>>>>>> aaafc1887bc2e36d28f8d9c37ba8cac67a059689
                 baseUrl = request.getRequestURL().toString()
                     .replace(request.getPathInfo(), "");    
             }

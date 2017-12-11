@@ -22,8 +22,8 @@ import org.apache.solr.client.solrj.SolrServer;
 import org.apache.solr.common.SolrDocument;
 import org.apache.solr.common.SolrDocumentList;
 import org.dspace.xoai.data.DSpaceSolrItem;
-import org.dspace.xoai.services.api.database.CollectionsService;
-import org.dspace.xoai.services.api.database.HandleResolver;
+import org.dspace.xoai.services.api.CollectionsService;
+import org.dspace.xoai.services.api.HandleResolver;
 import org.dspace.xoai.services.api.solr.SolrQueryResolver;
 import org.dspace.xoai.solr.DSpaceSolrSearch;
 import org.dspace.xoai.solr.exceptions.DSpaceSolrException;
@@ -35,7 +35,7 @@ import java.util.regex.Pattern;
 
 /**
  * 
- * @author Lyncode Development Team <dspace@lyncode.com>
+ * @author Lyncode Development Team (dspace at lyncode dot com)
  */
 public class DSpaceItemSolrRepository extends DSpaceItemRepository
 {
